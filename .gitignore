@@ -1,0 +1,11 @@
+build/
+vcpkg_installed/
+.vs/
+.vcpkg/
+dist/
+
+# Local design notes and agent instructions stay private.
+/docs/
+/AGENTS.md
+/CLAUDE.md
+/my notes.txt

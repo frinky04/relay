@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Read build settings
+        id: settings
+        run: |
+          $manifest = Get-Content vcpkg.json -Raw | ConvertFrom-Json
+          "baseline=$($manifest.'builtin-baseline')" >> $env:GITHUB_OUTPUT
+          "image=$env:ImageVersion" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/vcpkg-cache" -Force | Out-Null
+          "VCPKG_BINARY_SOURCES=clear;files,$env:RUNNER_TEMP\vcpkg-cache,readwrite" >> $env:GITHUB_ENV
+
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: vcpkg-vs2026-${{ steps.settings.outputs.image }}-${{ hashFiles('vcpkg.json', 'CMakePresets.json') }}
+          restore-keys: |
+            vcpkg-vs2026-${{ steps.settings.outputs.image }}-
+            vcpkg-vs2026-
+
+      - name: Check out pinned vcpkg
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ steps.settings.outputs.baseline }}
+          path: .vcpkg
+          persist-credentials: false
+
+      - name: Bootstrap vcpkg
+        run: ./.vcpkg/bootstrap-vcpkg.bat -disableMetrics
+
+      - name: Configure release dependencies
+        run: cmake --preset ci
+
+      - name: Build
+        run: cmake --build --preset ci --parallel
+
+      - name: Test
+        run: ctest --test-dir build/ci -C Release --output-on-failure
+
+      - name: Package portable release
+        run: |
+          cpack --config build/ci/CPackConfig.cmake -C Release -B dist
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+          $version = (Get-Content build/ci/version.txt -Raw).Trim()
+          $archive = Get-Item "dist/relay-$version-windows-x64.zip"
+          $hash = (Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($archive.Name)" | Set-Content -LiteralPath "$($archive.FullName).sha256" -Encoding ascii
+          @{ version = $version; commit = $env:GITHUB_SHA } | ConvertTo-Json |
+            Set-Content dist/build-info.json -Encoding utf8NoBOM
+
+      - name: Keep tested release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: relay-windows-x64-${{ github.sha }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+            dist/build-info.json
+          compression-level: 0
+          retention-days: 90
+          if-no-files-found: error
