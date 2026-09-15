@@ -31,6 +31,7 @@ void Updates::start(UpdateBackend backend, Report report) {
                     backend.restart();
                     return;
                 }
+                if (!automatic) report("Checking for updates...", "Any available update will download in the background");
                 const auto version = backend.download(stop);
                 ready = !version.empty();
                 if (ready) {

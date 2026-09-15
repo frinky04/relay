@@ -282,7 +282,7 @@ int runCommandTests() {
             !entrance.actions[0] && entrance.view.spans.empty(),
             "bare command names match case-insensitively and fuzzily, offering completion only");
         auto entered = query(entrance.view.rows[0].completion);
-        check(entered.view.rows.empty() && hint(entered.view) == "<Query> <Engine: Google> ", "command entrance reaches the explicit argument prompt");
+        check(entered.view.rows.empty() && hint(entered.view) == "<Query> ", "command entrance reaches the explicit argument prompt");
     }
     check(query("web cats").view.rows.empty(), "bare text does not implicitly parse command arguments");
     {
@@ -351,48 +351,39 @@ int runCommandTests() {
     check(failed.actions[0]() == "Clipboard busy; try again", "Lua receives host errors");
 
     auto terms = query("/web ");
-    check(terms.actions.empty() && hint(terms.view) == "<Query> <Engine: Google> ", "web prompts only for required input");
-    auto google = query("/web \"lua docs\" goo");
-    check(google.view.rows.size() == 1 && google.view.rows[0].completion == "/web \"lua docs\" Google ", "web completes the trailing engine argument");
-    auto search = query("/web \"lua documentation\"");
-    check(search.view.rows[1].title == "Google" && search.view.rows[2].title == "DuckDuckGo",
-        "web choice labels preserve official brand casing");
-    check(search.actions.size() == 3 && search.view.rows[0].actionLabel == "Search" && search.view.spans.size() == 2 &&
-        hint(search.view) == "<Engine: Google> " && search.view.rows[0].subtitle == "Search the web in your browser",
-        "web offers default execution and ghosts the default without inserting it");
-    check(search.actions[0]().empty() && opened == "https://www.google.com/search?q=lua%20documentation", "web builds and opens the Google search URL");
-    check(search.view.rows[0].completion.empty(), "default actions offer no text edit");
-    auto overrideSearch = query("/web \"lua documentation\" DUCKDUCKGO");
-    check(overrideSearch.actions.size() == 1 && overrideSearch.actions[0]().empty() && opened == "https://duckduckgo.com/?q=lua%20documentation",
-        "explicit engine overrides the default and resolves canonical case");
-    check(overrideSearch.view.rows[0].completion.empty(), "actions with explicit arguments offer no text edit either");
-    auto preserved = query("/WeB  \"Lua docs\"   duc  ");
-    check(preserved.view.rows.size() == 1 && preserved.view.rows[0].completion == "/WeB  \"Lua docs\"   DuckDuckGo  ",
-        "argument completion preserves surrounding spelling, quoting and whitespace");
-    check(query(preserved.view.rows[0].completion).actions[0]().empty() && opened == "https://duckduckgo.com/?q=Lua%20docs",
-        "an edited argument resolves to the same action");
+    check(terms.actions.empty() && hint(terms.view) == "<Query> ", "web prompts only for required input");
+    auto search = query("/web lua documentation");
+    check(search.actions.size() == 2 && search.view.rows[0].actionLabel == "Search Google" &&
+        search.view.rows[1].actionLabel == "Search DuckDuckGo" && hint(search.view).empty(),
+        "web offers engine verbs for an unquoted multiword query");
+    check(search.actions[0]().empty() && opened == "https://www.google.com/search?q=lua%20documentation",
+        "the default web verb searches Google with the complete query");
+    check(search.actions[1]().empty() && opened == "https://duckduckgo.com/?q=lua%20documentation",
+        "the alternate web verb searches DuckDuckGo with the same query");
+    check(search.view.rows[0].completion.empty() && search.view.rows[1].completion.empty(),
+        "web verbs leave the editable query unchanged");
+    check(query("/web \"lua documentation\"").actions[0]().empty() &&
+        opened == "https://www.google.com/search?q=lua%20documentation", "quoted queries still work");
+    check(query("/WeB  Lua   docs  ").actions[0]().empty() &&
+        opened == "https://www.google.com/search?q=Lua%20%20%20docs%20%20",
+        "web preserves query casing and internal and trailing whitespace");
     auto quoted = query("/APP  \"Google Ch");
     check(quoted.view.rows.size() == 1 && quoted.view.rows[0].completion == "/APP  \"Google Chrome\" ",
         "completion closes the edited quote without rewriting the noun");
-    auto missing = query("/WeB \"hello\"");
-    check(missing.view.rows[2].completion == "/WeB \"hello\" DuckDuckGo ", "missing argument completion inserts only the selected value and separator");
-    check(query("/web google").actions[0]().empty() && opened == "https://www.google.com/search?q=google", "engine names in the query slot remain query text");
-    check(query("/web hello Search").actions.empty(), "a verb cannot silently skip an argument slot");
-    auto alternatives = query("/web hello ");
-    for (size_t i = 1; i < alternatives.view.rows.size(); ++i) {
-        check(alternatives.actions[i]().empty(), "offered optional choices execute");
-        const auto target = opened;
-        check(query(alternatives.view.rows[i].completion).actions[0]().empty() && opened == target, "optional choice completions preserve execution");
-    }
+    check(query("/web google").actions[0]().empty() && opened == "https://www.google.com/search?q=google",
+        "engine names remain query text");
+    check(query("/web hello Search DuckDuckGo").actions[0]().empty() &&
+        opened == "https://www.google.com/search?q=hello%20Search%20DuckDuckGo",
+        "written verb names belong to the query; engines are selected from rows");
     const auto complex = std::string("C++ & #/%?=\" café 日本");
-    auto duck = query("/web " + command::quote(complex) + " duckduckgo Search");
-    check(duck.actions[0]().empty() && opened == "https://duckduckgo.com/?q=C%2B%2B%20%26%20%23%2F%25%3F%3D%22%20caf%C3%A9%20%E6%97%A5%E6%9C%AC",
+    auto duck = query("/web " + command::quote(complex));
+    check(duck.actions[1]().empty() && opened == "https://duckduckgo.com/?q=C%2B%2B%20%26%20%23%2F%25%3F%3D%22%20caf%C3%A9%20%E6%97%A5%E6%9C%AC",
         "web encodes punctuation and UTF-8 as one query parameter");
     for (const auto value : {"", "   "}) {
         opened.clear();
         check(!query("/web " + command::quote(value)).actions[0]().empty() && opened.empty(), "blank searches report recovery without opening a browser");
     }
-    check(query("/web hello unknown").actions.empty() && query("/web \"unfinished").actions.empty(), "web cannot run unresolved arguments");
+    check(query("/web \"unfinished").actions.empty(), "web cannot run an unfinished quote");
     openError = "Set a default browser and try again";
     check(search.actions[0]() == openError, "URL opening failures propagate through Lua");
     openError.clear();
@@ -448,7 +439,7 @@ int runCommandTests() {
         auto result = query(input);
         check(result.view.rows.size() == 1 && result.view.rows[0].kind == "Error" && !result.actions[0], "a typed verb stays part of the calculator expression");
     }
-    check(query("/web \"5 + 5\"").view.rows[0].actionLabel == "Search", "slash commands never invoke bare recognition");
+    check(query("/web \"5 + 5\"").view.rows[0].actionLabel == "Search Google", "slash commands never invoke bare recognition");
     check(query(std::string(70, '(') + "1+2" + std::string(70, ')')).view.rows.empty(), "calculator bounds parser recursion");
     check(query(std::string(310, '9') + "+1").view.rows.empty(), "calculator rejects nonfinite values");
     {
@@ -587,6 +578,14 @@ int runCommandTests() {
         check(command::evaluate(catalog, "/relay Check for Updates").actions[0]().empty() && checks == 1 &&
             command::evaluate(catalog, "/relay Restart to Update").actions[0]().empty() && restarts == 1,
             "update verbs dispatch separate background check and restart requests");
+        for (const auto* input : {"/relay Check for Updates", "Check for Updates"}) {
+            auto checkRows = command::evaluate(catalog, input);
+            check(checkRows.view.rows.size() == 1 && checkRows.view.rows[0].stayOpen,
+                "explicit and global update checks keep Relay open");
+        }
+        for (const auto& row : actions.view.rows)
+            check(row.stayOpen == (row.actionLabel == "Check for Updates"),
+                "only Check for Updates overrides the normal success behavior");
         auto version = command::evaluate(catalog, "/relay version");
         check(version.view.rows.size() == 1 && version.view.rows[0].title == "Copy Version", "typing version discovers Copy Version through normal verb matching");
         auto globalVersion = command::evaluate(catalog, "version");

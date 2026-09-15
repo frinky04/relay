@@ -35,9 +35,9 @@ constexpr float FONT_SIZE_SM  = 12.0f;  // kind tags, footer
 // Motion. Time constants (seconds) for exponential smoothing. 0.035 reads as
 // instant-but-alive; above 0.08 starts to read as lag.
 constexpr float TAU_SELECT    = 0.035f; // selection highlight + list scroll
-constexpr float TAU_HEIGHT    = 0.060f; // window height following content
-constexpr float FADE_IN_S     = 0.150f; // show fade, compositor-side opacity ramp
-constexpr float FADE_OUT_S    = 0.100f; // hide fade; exits softer and shorter than enters
+constexpr float TAU_HEIGHT    = 0.040f; // window height following content
+constexpr float FADE_IN_S     = 0.100f; // show fade, compositor-side opacity ramp
+constexpr float FADE_OUT_S    = 0.100f; // hide fade, compositor-side opacity ramp
 constexpr float ICON_REVEAL_S = 0.080f; // late-arriving icon: opacity 0..1 + 2px lift
 constexpr float ALT_FADE_S    = 0.050f; // icon/shortcut crossfade; input remains immediate
 

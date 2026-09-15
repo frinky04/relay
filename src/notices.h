@@ -7,7 +7,11 @@
 // Bounded notification storage, independent of command resolution.
 class NoticeStore {
 public:
-    struct Notice { std::string title, body; unsigned long long tick; };
+    struct Notice {
+        std::string title, body;
+        unsigned long long tick;
+        std::string key; // nonempty replaces the previous notice with this key
+    };
 
     void push(Notice n);
     void clear();

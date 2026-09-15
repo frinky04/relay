@@ -37,6 +37,18 @@ int runSupportTests() {
     notices.forEach([&](const NoticeStore::Notice&) { ++count; });
     check(count == 0, "clear removes all notices");
 
+    notices.push({"Other notice", "Unrelated", 30});
+    notices.push({"Checking for updates...", "Progress", 31, "updates"});
+    notices.push({"Relay is up to date", "Result", 32, "updates"});
+    ticks.clear();
+    notices.forEach([&](const NoticeStore::Notice& n) { ticks.push_back(n.tick); });
+    check(ticks == std::vector<unsigned long long>{32, 30}, "update results replace progress without removing unrelated notices");
+    notices.dismiss(32);
+    notices.push({"Update ready", "New check result", 33, "updates"});
+    ticks.clear();
+    notices.forEach([&](const NoticeStore::Notice& n) { ticks.push_back(n.tick); });
+    check(ticks == std::vector<unsigned long long>{33, 30}, "a new update result can follow a dismissed notice");
+
     printf("support checks: %d failure(s)\n", failures);
     return failures;
 }

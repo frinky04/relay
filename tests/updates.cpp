@@ -88,12 +88,13 @@ int runUpdateTests() {
         };
         check(waitNotices(1), "completed download reports readiness");
         check(updates.check().empty(), "manual checks can run after the automatic check");
-        check(waitNotices(2), "failed downloads report a recovery notice");
+        check(waitNotices(3), "failed downloads report a recovery notice after progress");
         check(updates.restart().empty(), "failed recheck preserves a previously ready update");
         check(applied.wait_for(5s) == std::future_status::ready, "restart dispatches after a verified download");
         updates.stop();
         check(downloader != caller && downloader == restarter, "download and restart stay on the update worker");
-        check(notices.size() == 2 && notices[0] == "Update ready" && notices[1] == "Update failed", "worker reports ready and failed states accurately");
+        check(notices.size() == 3 && notices[0] == "Update ready" && notices[1] == "Checking for updates..." &&
+            notices[2] == "Update failed", "worker reports progress before the manual check result");
     }
     {
         Updates updates;
@@ -111,6 +112,36 @@ int runUpdateTests() {
         check(began.wait_for(5s) == std::future_status::ready, "cancellable download starts");
         updates.stop();
         check(reports == 0 && restarts == 0, "shutdown cancels downloads without notices or restarts");
+    }
+    {
+        Updates updates;
+        std::mutex mutex;
+        std::condition_variable changed;
+        std::vector<std::string> notices;
+        std::promise<void> release;
+        auto gate = release.get_future().share();
+        int downloads = 0;
+        updates.start({[&](std::stop_token) {
+            if (++downloads == 1) return std::string("0.2.1");
+            gate.wait();
+            return std::string{};
+        }, [] {}}, [&](std::string title, std::string) {
+            std::lock_guard lock(mutex);
+            notices.push_back(std::move(title));
+            changed.notify_one();
+        });
+        auto waitNotices = [&](size_t count) {
+            std::unique_lock lock(mutex);
+            return changed.wait_for(lock, 5s, [&] { return notices.size() >= count; });
+        };
+        check(waitNotices(1), "automatic check finishes before manual progress test");
+        check(updates.check().empty() && waitNotices(2), "manual progress is reported before the download finishes");
+        check(!updates.check().empty(), "a check in progress rejects duplicate requests");
+        release.set_value();
+        check(waitNotices(3), "manual check reports when Relay is current");
+        updates.stop();
+        check(notices == std::vector<std::string>{"Update ready", "Checking for updates...", "Relay is up to date"},
+            "manual checks report ordered progress and success");
     }
     const auto temp = fs::temp_directory_path() / ("relay-update-tests-" + std::to_string(GetCurrentProcessId()));
     fs::create_directories(temp);

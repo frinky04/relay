@@ -41,7 +41,7 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     }, label});
     cmd.verbs.push_back({"Check for Updates", false, [checkUpdates = std::move(checkUpdates)](auto&) {
         return checkUpdates();
-    }, "Check for a new release and download it in the background"});
+    }, "Check for a new release and download it in the background", true});
     cmd.verbs.push_back({"Restart to Update", false, [restartToUpdate = std::move(restartToUpdate)](auto&) {
         return restartToUpdate();
     }, "Apply the downloaded update and restart Relay"});

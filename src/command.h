@@ -19,7 +19,13 @@ struct Argument {
     bool rest = false; // final text argument consumes the remaining input
     std::function<std::vector<Choice>()> loadChoices; // native choices, sampled once per evaluation
 };
-struct Verb { std::string name; bool danger = false; Run run; std::string help; };
+struct Verb {
+    std::string name;
+    bool danger = false;
+    Run run;
+    std::string help;
+    bool stayOpen = false; // native actions whose result is read in Relay
+};
 struct Preview { std::string title, error; };
 struct Command {
     std::string name, help;

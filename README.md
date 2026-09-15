@@ -16,13 +16,14 @@ Restart Relay after installing or removing apps to refresh its app list.
 | --- | --- |
 | `fire` | Find Firefox and open it |
 | `/window code` | Find an open window by title or app name and switch to it |
-| `/web "lua documentation"` | Search Google in your browser |
-| `/web "lua documentation" DuckDuckGo` | Search DuckDuckGo instead |
+| `/web lua documentation` | Enter searches Google; select Search DuckDuckGo to use that engine |
 | `5 + 5` | Show `10`; Enter copies the result |
 | `/process paint` | Find a running process to stop |
 | `/relay ` | Open settings, manage plugins, update or quit Relay |
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use its default action. **Tab** fills names and adds quotes where needed; the hints show what comes next.
+
+Check for Updates keeps Relay open and shows progress and the result below the app list.
 
 **Kill requires two Enter presses and discards unsaved work.**
 

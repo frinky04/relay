@@ -3,6 +3,7 @@
 
 void NoticeStore::push(Notice n) {
     std::lock_guard lk(m_mtx);
+    if (!n.key.empty()) std::erase_if(m_list, [&](const Notice& old) { return old.key == n.key; });
     m_list.push_front(std::move(n));
     if (m_list.size() > 20) m_list.pop_back();
 }

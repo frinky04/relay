@@ -62,8 +62,9 @@ private:
     uint64_t m_generation = 0;
     bool m_waiting = false;
     bool m_hasView = false; // retain even an empty completed view during queries
-    struct PendingAction { uint64_t generation; size_t row; bool stayOpen; };
+    struct PendingAction { uint64_t generation; size_t row; bool stayOpen; bool showNotice; };
     std::optional<PendingAction> m_pendingAction;
+    uint64_t m_noticeGeneration = 0; // reveal a requested result once, only in its cleared session
 
     char m_input[512] = {};
     unsigned m_inputRevision = 0; // programmatic replacements start a new editor state

@@ -79,6 +79,7 @@ void add(Evaluation& out, MenuRow row, const Verb* verb = nullptr, std::vector<s
     if (verb) {
         row.actionLabel = verb->name;
         row.danger = verb->danger;
+        row.stayOpen = verb->stayOpen;
         out.actions.push_back([verb, args = std::move(args)] { return verb->run(args); });
     } else out.actions.push_back({});
     out.view.rows.push_back(std::move(row));
