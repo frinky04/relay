@@ -2,6 +2,7 @@
 #include "command.h"
 #include "app_command.h"
 #include "relay_command.h"
+#include "config.h"
 #include "window_command.h"
 #include "process_command.h"
 #include "engine.h"
@@ -562,15 +563,21 @@ int runCommandTests() {
         {
             std::ifstream file(configPath);
             const std::string contents((std::istreambuf_iterator<char>(file)), {});
-            check(contents.find("return {}") != contents.npos, "new config uses built-in defaults without copying settings");
+            check(contents.starts_with(Config::reference()) && contents.find("return {}") != contents.npos,
+                "new config documents settings and uses built-in defaults without copying overrides");
         }
         { std::ofstream file(configPath); file << "unfinished user config"; }
         check(actions.actions[0]().empty(), "existing invalid config can still be opened for repair");
         {
             std::ifstream file(configPath);
             const std::string contents((std::istreambuf_iterator<char>(file)), {});
-            check(contents == "unfinished user config", "Edit Config never overwrites an existing file");
+            check(contents == Config::reference() + "unfinished user config", "Edit Config preserves existing user Lua after its reference");
         }
+        { std::ofstream file(configPath); file << "-- BEGIN RELAY SETTINGS\nreturn {}"; }
+        edited.clear();
+        check(!actions.actions[0]().empty() && edited == configPath,
+            "Edit Config opens a damaged reference for repair and reports the refresh error");
+        { std::ofstream file(configPath); file << "return {}"; }
         check(actions.actions[1]().empty() && folder == pluginsPath && std::filesystem::is_directory(pluginsPath), "Open Plugins Folder creates and opens the user directory");
         check(actions.actions[3]().empty() && copied == actions.view.rows[3].subtitle, "Copy Version copies exactly the visible version");
         check(command::evaluate(catalog, "/relay Reload Plugins").actions[0]().empty() && reloads == 1 &&
@@ -597,6 +604,7 @@ int runCommandTests() {
         check(!actions.actions[1]().empty() && folder.empty(), "a blocked plugins directory fails before opening anything");
         std::filesystem::remove(pluginsPath);
         std::filesystem::remove(configPath);
+        std::filesystem::remove(directory / "init.lua.relay-backup");
         std::filesystem::remove(directory);
     }
     { std::ofstream f(temp / "rest.lua"); f << R"(return {name='rest', help='Test remaining text', args={{name='color', choices={'Red'}}, {name='text', rest=true}}, verbs={{name='Copy', run=function(args) return host.copy(table.concat(args, '|')) end}, {name='Remove', danger=true, run=function(args) return host.copy('remove|' .. args[2]) end}}})"; }

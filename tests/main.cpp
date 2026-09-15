@@ -15,6 +15,7 @@ int main(int argc, char** argv) {
     const std::string_view selected = argc == 2 ? argv[1] : "all";
     const struct { const char* name; int (*run)(); } suites[] = {
         {"support", runSupportTests},
+        {"config", runConfigTests},
         {"watcher", runWatcherTests},
         {"commands", runCommandTests},
         {"frecency", runFrecencyTests},
@@ -32,7 +33,7 @@ int main(int argc, char** argv) {
         }
     }
     if (!found) {
-        std::fprintf(stderr, "Usage: relay_test [all|support|watcher|commands|frecency|updates]\n");
+        std::fprintf(stderr, "Usage: relay_test [all|support|config|watcher|commands|frecency|updates]\n");
         return 2;
     }
     return failures ? 1 : 0;

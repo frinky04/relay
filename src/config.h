@@ -3,24 +3,23 @@
 #include <filesystem>
 #include <string>
 
-// %APPDATA%\relay\init.lua, vim-style:
-//   return {
-//     hotkey      = "alt+space",         -- ctrl/alt/shift/win + key
-//     width       = 640,
-//     max_rows    = 9,
-//     start_with_windows = false,
-//   }
+// User overrides live in %APPDATA%\relay\init.lua. The catalogue in config.cpp
+// supplies defaults, validation and the generated comment reference.
 struct Config {
-    UINT hotkeyMods = MOD_ALT;
-    UINT hotkeyVk = VK_SPACE;
-    std::string hotkeyText = "alt+space";
-    float width = 640.0f;
-    int maxRows = 9;
-    bool startWithWindows = false;
+    Config();
+    UINT hotkeyMods = 0;
+    UINT hotkeyVk = 0;
+    std::string hotkeyText;
+    float width;
+    int maxRows;
+    bool startWithWindows;
 
     static std::filesystem::path path();
-    // Resets to defaults, then applies the file if present. Returns false and
-    // fills err on a parse error (defaults stay in effect).
+    static std::string reference();
+    // Refresh only generated comments; preserve user Lua without executing it.
+    static std::string refreshReference(const std::filesystem::path& file);
+    // Starts with defaults; valid supplied fields override them. Errors return
+    // false with a recovery message. Loading itself never writes the file.
     bool load(std::string& err);
     bool load(const std::filesystem::path& file, std::string& err);
     static bool parseHotkey(const std::string& s, UINT& mods, UINT& vk);

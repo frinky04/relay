@@ -154,6 +154,8 @@ bool App::init(HINSTANCE inst) {
     // Configuration is loaded before the window becomes interactive. Subsequent
     // file changes are parsed on the watcher thread and delivered as plain data.
     std::string error;
+    if (auto referenceError = Config::refreshReference(Config::path()); !referenceError.empty())
+        m_notices.push({"Config reference", std::move(referenceError), GetTickCount64()});
     if (!m_config.load(error)) {
         logf("config: %s", error.c_str());
         m_notices.push({ "Config error", error, GetTickCount64() });

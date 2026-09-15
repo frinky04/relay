@@ -41,7 +41,7 @@ Reopening starts with empty input. Use `/relay Quit` to exit.
 
 ## Settings and plugins
 
-Type `config` to edit `%APPDATA%/relay/init.lua`. Set `hotkey`, `width` or `max_rows` in its returned table; saving applies the settings.
+Type `config` to edit `%APPDATA%/relay/init.lua`. Comments at the top list every setting and its default, kept current as Relay updates. Copy the settings you want into the returned table, remove their leading `--`, and save to apply them.
 
 Add `start_with_windows = true` to start Relay hidden when you sign in. Set it to `false` to turn startup off.
 

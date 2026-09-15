@@ -1,28 +1,11 @@
 #include "relay_command.h"
-#include <windows.h>
+#include "config.h"
 
 namespace {
 std::string ensureDirectory(const std::filesystem::path& path) {
     std::error_code error;
     std::filesystem::create_directories(path, error);
     return error ? "Cannot create the folder; check its permissions and try again" : "";
-}
-
-std::string ensureConfig(const std::filesystem::path& path) {
-    auto error = ensureDirectory(path.parent_path());
-    if (!error.empty()) return error;
-    // Exclusive creation preserves existing configuration, including invalid Lua.
-    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file == INVALID_HANDLE_VALUE) {
-        const auto code = GetLastError();
-        if (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS) return {};
-        return "Cannot create init.lua; check its permissions and try again";
-    }
-    constexpr char initial[] = "-- Save this file to apply settings\nreturn {}\n";
-    DWORD written = 0;
-    bool ok = WriteFile(file, initial, sizeof(initial) - 1, &written, nullptr) && written == sizeof(initial) - 1;
-    CloseHandle(file);
-    return ok ? "" : "Cannot write init.lua; check available disk space and edit the file to return a settings table";
 }
 }
 
@@ -38,8 +21,12 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     command::Command cmd{"relay", "Configure and manage Relay"};
     cmd.search = true;
     cmd.verbs.push_back({"Edit Config", false, [config = std::move(config), edit = std::move(edit)](auto&) {
-        auto error = ensureConfig(config);
-        return error.empty() ? edit(config) : error;
+        const auto referenceError = Config::refreshReference(config);
+        std::error_code ec;
+        if (!referenceError.empty() && !std::filesystem::is_regular_file(config, ec)) return referenceError;
+        // A damaged reference or read-only file must still open for repair.
+        const auto editError = edit(config);
+        return editError.empty() ? referenceError : editError;
     }, "Open init.lua in your default app; saves apply automatically"});
     cmd.verbs.push_back({"Open Plugins Folder", false, [plugins = std::move(plugins), openFolder = std::move(openFolder)](auto&) {
         auto error = ensureDirectory(plugins);
