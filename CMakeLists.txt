@@ -65,10 +65,6 @@ add_executable(relay_test
 )
 target_link_libraries(relay_test PRIVATE relay_core)
 target_compile_definitions(relay_test PRIVATE RELAY_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-foreach(target relay relay_test)
-  add_custom_command(TARGET ${target} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:velopack_sdk> $<TARGET_FILE_DIR:${target}>/velopack_libc.dll)
-endforeach()
 if(MSVC)
   target_compile_options(relay_test PRIVATE /W3 /utf-8 /bigobj /MP)
 endif()

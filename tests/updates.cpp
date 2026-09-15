@@ -136,7 +136,12 @@ int runUpdateTests() {
         wchar_t actual[MAX_PATH]{}, arguments[MAX_PATH]{};
         if (loaded) loaded = SUCCEEDED(link->GetPath(actual, MAX_PATH, nullptr, SLGP_RAWPATH)) &&
             SUCCEEDED(link->GetArguments(arguments, MAX_PATH));
-        check(loaded && fs::path(actual) == target && std::wstring(arguments) == L"--startup", "shortcut preserves paths with spaces and requests hidden startup");
+        std::error_code pathError;
+        const bool sameTarget = loaded && fs::equivalent(fs::path(actual), target, pathError);
+        if (!loaded || !sameTarget || std::wstring(arguments) != L"--startup")
+            std::printf("Shortcut: loaded=%d, actual=%s, expected=%s, arguments=%s\n", loaded,
+                narrow(actual).c_str(), narrow(target.wstring()).c_str(), narrow(arguments).c_str());
+        check(sameTarget && std::wstring(arguments) == L"--startup", "shortcut preserves paths with spaces and requests hidden startup");
     }
     if (SUCCEEDED(apartment)) CoUninitialize();
     check(desktop::writeStartupShortcut(shortcut, target, false).empty() && !fs::exists(shortcut), "disabling startup removes its shortcut");

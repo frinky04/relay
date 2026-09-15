@@ -10,4 +10,10 @@ set_target_properties(velopack_sdk PROPERTIES
   IMPORTED_IMPLIB "${velopack_SOURCE_DIR}/lib/velopack_libc_win_x64_msvc.dll.lib"
   IMPORTED_LOCATION "${velopack_SOURCE_DIR}/lib/velopack_libc_win_x64_msvc.dll"
   INTERFACE_INCLUDE_DIRECTORIES "${velopack_SOURCE_DIR}/include")
+# The import library expects this DLL name. Copy during configuration so the
+# two parallel executable targets never write the same runtime file at once.
+foreach(config IN LISTS CMAKE_CONFIGURATION_TYPES)
+  configure_file("${velopack_SOURCE_DIR}/lib/velopack_libc_win_x64_msvc.dll"
+    "${CMAKE_BINARY_DIR}/${config}/velopack_libc.dll" COPYONLY)
+endforeach()
 file(WRITE "${CMAKE_BINARY_DIR}/velopack-version.txt" "${RELAY_VELOPACK_VERSION}\n")
