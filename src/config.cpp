@@ -40,14 +40,20 @@ bool Config::parseHotkey(const std::string& s, UINT& mods, UINT& vk) {
 }
 
 bool Config::load(std::string& err) {
+    return load(path(), err);
+}
+
+bool Config::load(const fs::path& file, std::string& err) {
     *this = Config{};
     err.clear();
     std::error_code ec;
-    if (!fs::exists(path(), ec)) return true;
+    const bool exists = fs::exists(file, ec);
+    if (ec) { err = "Cannot read init.lua; check its permissions and save it again"; return false; }
+    if (!exists) return true;
 
     sol::state lua;
     lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::os);
-    sol::protected_function_result r = lua.safe_script_file(path().string(), sol::script_pass_on_error);
+    sol::protected_function_result r = lua.safe_script_file(file.string(), sol::script_pass_on_error);
     if (!r.valid()) { sol::error e = r; err = e.what(); return false; }
     sol::object o = r;
     if (o.get_type() != sol::type::table) { err = "Make init.lua return a settings table"; return false; }
@@ -60,5 +66,11 @@ bool Config::load(std::string& err) {
     }
     if (sol::optional<double> w = t["width"]) width = (float)std::clamp(*w, 320.0, 1600.0);
     if (sol::optional<int> mr = t["max_rows"]) maxRows = std::clamp(*mr, 1, 30);
+    sol::object startup = t["start_with_windows"];
+    if (startup.valid() && startup.get_type() != sol::type::nil) {
+        if (startup.get_type() != sol::type::boolean)
+            err = "Set start_with_windows to true or false, then save init.lua";
+        else startWithWindows = startup.as<bool>();
+    }
     return err.empty();
 }

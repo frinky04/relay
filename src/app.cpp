@@ -28,6 +28,7 @@ static constexpr UINT WM_APP_NOTICE = WM_APP + 1;   // lParam: new std::pair<std
 static constexpr UINT WM_APP_CONFIG = WM_APP + 2;  // lParam: ConfigUpdate*
 static constexpr UINT WM_APP_ENGINE = WM_APP + 3;
 static constexpr UINT WM_APP_QUIT = WM_APP + 4;
+static constexpr UINT WM_APP_UPDATE_NOTICE = WM_APP + 5;
 static constexpr unsigned long long PEEK_MS = 4000;
 
 struct ConfigUpdate {
@@ -68,6 +69,15 @@ LRESULT App::handle(UINT m, WPARAM w, LPARAM l) {
         auto* p = (std::pair<std::string, std::string>*)l;
         onNotice(Notice{ p->first, p->second, GetTickCount64() });
         delete p;
+        return 0;
+    }
+    case WM_APP_UPDATE_NOTICE: {
+        auto* p = (std::pair<std::string, std::string>*)l;
+        // Background checks never reveal a hidden launcher or replace input.
+        logf("update: %s | %s", p->first.c_str(), p->second.c_str());
+        m_notices.push({std::move(p->first), std::move(p->second), GetTickCount64()});
+        delete p;
+        if (m_visible) refreshNotices();
         return 0;
     }
     case WM_APP_CONFIG: {
@@ -147,6 +157,8 @@ bool App::init(HINSTANCE inst) {
     if (!m_config.load(error)) {
         logf("config: %s", error.c_str());
         m_notices.push({ "Config error", error, GetTickCount64() });
+    } else if (auto startupError = desktop::setStartup(m_config.startWithWindows); !startupError.empty()) {
+        m_notices.push({"Windows startup", std::move(startupError), GetTickCount64()});
     }
     const HWND hwnd = m_hwnd;
     auto report = [hwnd](std::string error) {
@@ -154,7 +166,13 @@ bool App::init(HINSTANCE inst) {
         if (!PostMessageW(hwnd, WM_APP_NOTICE, 0, (LPARAM)notice)) delete notice;
     };
     auto copy = [hwnd](const std::string& text) { return clipboardCopy(text, hwnd); };
-    m_engine.start([hwnd, report, copy](std::function<std::string()> reloadPlugins) {
+    m_updates.start(velopackUpdates([hwnd] {
+        if (!PostMessageW(hwnd, WM_APP_QUIT, 0, 0)) throw std::runtime_error("Cannot request shutdown");
+    }), [hwnd](std::string title, std::string body) {
+        auto* notice = new std::pair<std::string, std::string>(std::move(title), std::move(body));
+        if (!PostMessageW(hwnd, WM_APP_UPDATE_NOTICE, 0, (LPARAM)notice)) delete notice;
+    });
+    m_engine.start([this, hwnd, report, copy](std::function<std::string()> reloadPlugins) {
         std::vector<desktop::AppEntry> apps;
         try { apps = desktop::listApps(); }
         catch (const std::exception& e) { report(e.what()); }
@@ -169,7 +187,7 @@ bool App::init(HINSTANCE inst) {
             desktop::editTextFile, desktop::openFolder, copy, [hwnd]() -> std::string {
                 if (PostMessageW(hwnd, WM_APP_QUIT, 0, 0)) return {};
                 return "Cannot request shutdown; try Quit again";
-            }, std::move(reloadPlugins)));
+            }, std::move(reloadPlugins), [this] { return m_updates.check(); }, [this] { return m_updates.restart(); }));
         return commands;
     }, [copy, report](std::vector<command::Command>& commands) {
         loadLuaCommands(commands, fs::path(exeDir()) / L"plugins", copy, desktop::openUrl, report);
@@ -188,7 +206,8 @@ void App::startWatcher() {
     m_watcher.start({ directory }, [hwnd](const fs::path& path) {
         if (path.filename() != L"init.lua") return;
         auto* update = new ConfigUpdate;
-        update->settings.load(update->error);
+        if (update->settings.load(update->error))
+            update->error = desktop::setStartup(update->settings.startWithWindows);
         if (!PostMessageW(hwnd, WM_APP_CONFIG, 0, (LPARAM)update)) delete update;
     });
 }
@@ -204,10 +223,13 @@ void App::shutdown() {
     UnregisterHotKey(m_hwnd, HOTKEY_ID);
     m_watcher.stop();
     m_engine.stop();
+    m_updates.stop();
     MSG pending{};
     while (PeekMessageW(&pending, m_hwnd, WM_APP_CONFIG, WM_APP_CONFIG, PM_REMOVE))
         delete (ConfigUpdate*)pending.lParam;
     while (PeekMessageW(&pending, m_hwnd, WM_APP_NOTICE, WM_APP_NOTICE, PM_REMOVE))
+        delete (std::pair<std::string, std::string>*)pending.lParam;
+    while (PeekMessageW(&pending, m_hwnd, WM_APP_UPDATE_NOTICE, WM_APP_UPDATE_NOTICE, PM_REMOVE))
         delete (std::pair<std::string, std::string>*)pending.lParam;
     IconCache::instance().shutdown();
     ImGui_ImplDX11_Shutdown();

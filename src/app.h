@@ -4,6 +4,7 @@
 #include "watcher.h"
 #include "notices.h"
 #include "engine.h"
+#include "updates.h"
 #include <windows.h>
 #include <d3d11.h>
 #include <dxgi1_2.h>
@@ -57,6 +58,7 @@ private:
     using Notice = NoticeStore::Notice;
     NoticeStore m_notices;
     Engine m_engine;
+    Updates m_updates;
     uint64_t m_generation = 0;
     bool m_waiting = false;
     bool m_hasView = false; // retain even an empty completed view during queries

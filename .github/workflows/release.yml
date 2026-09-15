@@ -49,37 +49,22 @@ jobs:
           gh run download "$run_id" --name "relay-windows-x64-$RELEASE_COMMIT" --dir dist
 
       - name: Verify release files
-        run: |
-          python3 - <<'PY'
-          import json, os, pathlib, zipfile
-          version = os.environ['RELEASE_TAG'][1:]
-          info = json.loads(pathlib.Path('dist/build-info.json').read_text())
-          if info != {'version': version, 'commit': os.environ['RELEASE_COMMIT']}:
-              raise SystemExit('Build metadata does not match the tag commit and version')
-          with zipfile.ZipFile(f'dist/relay-{version}-windows-x64.zip') as archive:
-              files = set(archive.namelist())
-              required = {'relay.exe', 'version.txt', 'LICENSE', 'assets/NotoSansMono-Medium.ttf',
-                          'assets/OFL.txt', 'plugins/calc.lua', 'plugins/web.lua',
-                          'licenses/imgui.txt', 'licenses/lua.txt', 'licenses/sol2.txt',
-                          'vcruntime140.dll', 'msvcp140.dll'}
-              if not required <= files:
-                  raise SystemExit(f'Release is missing required files: {required - files}')
-              if archive.read('version.txt').decode().strip() != version:
-                  raise SystemExit('Packaged version does not match the tag')
-              if any(p.startswith(('docs/', 'tests/', '.git/')) or p.endswith('_test.exe') for p in files):
-                  raise SystemExit('Release contains development files')
-          PY
-          cd dist
-          sha256sum --check "relay-${RELEASE_TAG#v}-windows-x64.zip.sha256"
+        run: python3 scripts/verify_release.py dist "${RELEASE_TAG#v}" "$RELEASE_COMMIT"
 
       - name: Publish GitHub release
         run: |
           cat > release-notes.md <<'EOF'
-          Download the Windows x64 ZIP, extract it, and run `relay.exe`. Keep the extracted files together, then press **Alt+Space**.
+          Download `frinky04.Relay-win-Setup.exe` to install Relay for your Windows account. For portable use, extract `frinky04.Relay-win-Portable.zip` and run `Relay.exe` in its top folder. Press **Alt+Space** to open Relay.
 
-          Settings and launch history live in `%APPDATA%/relay`. This portable release includes the Visual C++ runtime. The `.sha256` file contains the ZIP's SHA-256 checksum.
+          Relay downloads updates in the background on startup and applies them on the next restart. Use `/relay Check for Updates` to check now and `/relay Restart to Update` to apply a ready update.
+
+          Set `start_with_windows = true` in `%APPDATA%/relay/init.lua` to start Relay hidden when you sign in. Settings, user plugins, and launch history remain in `%APPDATA%/relay` across updates.
+
+          Users upgrading from v0.1.0 need to quit the old copy and install this release once. `SHA256SUMS` contains checksums for all release files.
           EOF
           gh release create "$RELEASE_TAG" \
-            "dist/relay-${RELEASE_TAG#v}-windows-x64.zip" \
-            "dist/relay-${RELEASE_TAG#v}-windows-x64.zip.sha256" \
-            --verify-tag --title "Relay $RELEASE_TAG" --notes-file release-notes.md --generate-notes
+            dist/frinky04.Relay-win-Setup.exe dist/frinky04.Relay-win-Portable.zip \
+            "dist/frinky04.Relay-${RELEASE_TAG#v}-full.nupkg" \
+            dist/releases.win.json dist/RELEASES dist/assets.win.json dist/SHA256SUMS \
+            --draft --verify-tag --title "Relay $RELEASE_TAG" --notes-file release-notes.md --generate-notes
+          gh release edit "$RELEASE_TAG" --draft=false --latest

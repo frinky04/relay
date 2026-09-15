@@ -537,23 +537,25 @@ int runCommandTests() {
         const auto pluginsPath = directory / "plugins";
         std::filesystem::path edited, folder;
         std::string hostError;
-        int quits = 0, reloads = 0;
+        int quits = 0, reloads = 0, checks = 0, restarts = 0;
         std::vector<command::Command> catalog{relayCommand(configPath, pluginsPath, "1.2.3-test",
             [&](const auto& path) { edited = path; return hostError; },
             [&](const auto& path) { folder = path; return hostError; },
             [&](const auto& value) { copied = value; return hostError; },
-            [&] { ++quits; return hostError; }, [&] { ++reloads; return hostError; })};
+            [&] { ++quits; return hostError; }, [&] { ++reloads; return hostError; },
+            [&] { ++checks; return hostError; }, [&] { ++restarts; return hostError; })};
         auto noun = command::evaluate(catalog, "/relay");
         check(noun.view.rows.size() == 1 && noun.view.rows[0].completion == "/relay " && !noun.actions[0], "relay noun completes before any native action");
         copied.clear();
         auto actions = command::evaluate(catalog, noun.view.rows[0].completion);
-        check(actions.view.rows.size() == 5 && actions.view.rows[0].title == "Edit Config" &&
+        check(actions.view.rows.size() == 7 && actions.view.rows[0].title == "Edit Config" &&
             actions.view.rows[1].title == "Open Plugins Folder" && actions.view.rows[2].title == "Reload Plugins" &&
-            actions.view.rows[3].title == "Copy Version" && actions.view.rows[4].title == "Quit",
-            "relay exposes five ordered verbs with config as the default");
+            actions.view.rows[3].title == "Copy Version" && actions.view.rows[4].title == "Check for Updates" &&
+            actions.view.rows[5].title == "Restart to Update" && actions.view.rows[6].title == "Quit",
+            "relay exposes seven ordered verbs with config as the default");
         check(hint(actions.view) == "Edit Config " && actions.view.slots[0].kind == Slot::Verb, "entering a multi-verb command ghosts its default verb");
         check(actions.view.rows[3].subtitle == "Relay 1.2.3-test" && copied.empty() && quits == 0 && reloads == 0 &&
-            edited.empty() && folder.empty() && !std::filesystem::exists(directory), "discovery shows the version without performing actions or creating files");
+            checks == 0 && restarts == 0 && edited.empty() && folder.empty() && !std::filesystem::exists(directory), "discovery shows the version without performing actions or creating files");
         for (const auto& row : actions.view.rows)
             check(row.completion.empty() && !row.subtitle.empty(), "native actions offer descriptions and execution only");
         check(actions.actions[0]().empty() && edited == configPath, "Edit Config creates missing config and dispatches its exact path");
@@ -575,6 +577,9 @@ int runCommandTests() {
             command::evaluate(catalog, "reload").actions[0]().empty() && reloads == 2,
             "explicit and bare Reload Plugins dispatch the same native request");
         check(command::evaluate(catalog, "/relay Quit").actions[0]().empty() && quits == 1, "explicit Quit dispatches the host shutdown request");
+        check(command::evaluate(catalog, "/relay Check for Updates").actions[0]().empty() && checks == 1 &&
+            command::evaluate(catalog, "/relay Restart to Update").actions[0]().empty() && restarts == 1,
+            "update verbs dispatch separate background check and restart requests");
         auto version = command::evaluate(catalog, "/relay version");
         check(version.view.rows.size() == 1 && version.view.rows[0].title == "Copy Version", "typing version discovers Copy Version through normal verb matching");
         auto globalVersion = command::evaluate(catalog, "version");
@@ -812,7 +817,8 @@ int runCommandTests() {
             return std::vector<command::Command>{
                 appCommand({{"Test App", "fake-target"}}, [](auto&) { return std::string{}; }),
                 relayCommand(temp / "unused.lua", user, "test", [](auto&) { return std::string{}; },
-                    [](auto&) { return std::string{}; }, copy, [] { return std::string{}; }, std::move(reload))};
+                    [](auto&) { return std::string{}; }, copy, [] { return std::string{}; }, std::move(reload),
+                    [] { return std::string{}; }, [] { return std::string{}; })};
         }, [&](auto& catalog) {
             ++pluginLoads;
             if (pauseReload) { reloadStarted.set_value(); reloadGate.wait(); }

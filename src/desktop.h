@@ -43,6 +43,10 @@ std::string launchApp(const std::string& parsing); // empty on success, otherwis
 std::string openUrl(const std::string& url); // host validates HTTP(S) before dispatch
 std::string editTextFile(const std::filesystem::path& path); // default app, then Notepad if opening fails
 std::string openFolder(const std::filesystem::path& path);
+std::string setStartup(bool enabled);
+// Explicit paths allow headless checks to write only to a temporary directory.
+std::string writeStartupShortcut(const std::filesystem::path& shortcut,
+    const std::filesystem::path& target, bool enabled);
 std::vector<WindowEntry> listWindows();
 std::string activateWindow(const WindowTarget& target);
 std::vector<ProcessEntry> listProcesses();

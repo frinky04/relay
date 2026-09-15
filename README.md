@@ -6,7 +6,7 @@ The apps you use often and have opened recently rise to the top. Type `/app ` fo
 
 ## Get started
 
-Download the Windows x64 ZIP from [Releases](https://github.com/frinky04/relay/releases/latest), extract it, and run `relay.exe`. Keep the extracted files together.
+Download **Setup.exe** from [Releases](https://github.com/frinky04/relay/releases/latest) and run it. Relay installs for your Windows account. For portable use, extract the **Portable.zip** and run `Relay.exe` in its top folder; keep the files together.
 
 Restart Relay after installing or removing apps to refresh its app list.
 
@@ -20,7 +20,7 @@ Restart Relay after installing or removing apps to refresh its app list.
 | `/web "lua documentation" DuckDuckGo` | Search DuckDuckGo instead |
 | `5 + 5` | Show `10`; Enter copies the result |
 | `/process paint` | Find a running process to stop |
-| `/relay ` | Open settings, manage plugins or quit Relay |
+| `/relay ` | Open settings, manage plugins, update or quit Relay |
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use its default action. **Tab** fills names and adds quotes where needed; the hints show what comes next.
 
@@ -43,7 +43,15 @@ Reopening starts with empty input. Use `/relay Quit` to exit.
 
 Type `config` to edit `%APPDATA%/relay/init.lua`. Set `hotkey`, `width` or `max_rows` in its returned table; saving applies the settings.
 
+Add `start_with_windows = true` to start Relay hidden when you sign in. Set it to `false` to turn startup off.
+
 Add Lua commands through `/relay Open Plugins Folder`, then run `/relay Reload Plugins` to load your changes. Use the [bundled commands](plugins) as examples.
+
+## Updates
+
+Relay downloads updates in the background on startup and applies them on the next restart. Run `/relay Check for Updates` to check now, then `/relay Restart to Update` when an update is ready. Update notices appear below the app list. Settings, user plugins and launch history survive updates.
+
+Coming from v0.1.0? Quit the old copy and install the new release once.
 
 ## License
 

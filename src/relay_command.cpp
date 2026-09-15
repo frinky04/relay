@@ -32,7 +32,9 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     std::function<std::string(const std::filesystem::path&)> openFolder,
     std::function<std::string(const std::string&)> copy,
     std::function<std::string()> quit,
-    std::function<std::string()> reloadPlugins) {
+    std::function<std::string()> reloadPlugins,
+    std::function<std::string()> checkUpdates,
+    std::function<std::string()> restartToUpdate) {
     command::Command cmd{"relay", "Configure and manage Relay"};
     cmd.search = true;
     cmd.verbs.push_back({"Edit Config", false, [config = std::move(config), edit = std::move(edit)](auto&) {
@@ -50,6 +52,12 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     cmd.verbs.push_back({"Copy Version", false, [label, copy = std::move(copy)](auto&) {
         return copy(label);
     }, label});
+    cmd.verbs.push_back({"Check for Updates", false, [checkUpdates = std::move(checkUpdates)](auto&) {
+        return checkUpdates();
+    }, "Check for a new release and download it in the background"});
+    cmd.verbs.push_back({"Restart to Update", false, [restartToUpdate = std::move(restartToUpdate)](auto&) {
+        return restartToUpdate();
+    }, "Apply the downloaded update and restart Relay"});
     cmd.verbs.push_back({"Quit", false, [quit = std::move(quit)](auto&) {
         return quit();
     }, "Exit Relay; launch it again to use the hotkey"});

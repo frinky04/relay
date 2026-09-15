@@ -47,6 +47,43 @@ DWORD shellOpen(const std::string& target, const wchar_t* parameters = nullptr) 
 }
 }
 
+std::string writeStartupShortcut(const std::filesystem::path& shortcut,
+    const std::filesystem::path& target, bool enabled) {
+    const std::string error = "Cannot change Windows startup; check the Startup folder permissions and save init.lua again";
+    if (!enabled) {
+        std::error_code ec;
+        std::filesystem::remove(shortcut, ec);
+        return ec ? error : "";
+    }
+    Apartment apartment;
+    if (FAILED(apartment.result)) return error;
+    ComPtr<IShellLinkW> link;
+    ComPtr<IPersistFile> file;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+        FAILED(link->SetPath(target.c_str())) || FAILED(link->SetArguments(L"--startup")) ||
+        FAILED(link->SetWorkingDirectory(target.parent_path().c_str())) ||
+        FAILED(link->SetDescription(L"Start Relay with Windows")) ||
+        FAILED(link.As(&file)) || FAILED(file->Save(shortcut.c_str(), TRUE))) return error;
+    return {};
+}
+
+std::string setStartup(bool enabled) {
+    const std::filesystem::path current(exeDir());
+    std::error_code ec;
+    // Development builds never replace an installed copy's startup shortcut.
+    if (!std::filesystem::exists(current / L"sq.version", ec))
+        return enabled ? "Windows startup is unavailable in this build; install Relay from GitHub Releases" : "";
+    const auto target = current.parent_path() / L"relay.exe";
+    if (enabled && !std::filesystem::exists(target, ec))
+        return "Cannot find Relay's launcher; reinstall Relay, then save init.lua";
+    PWSTR folder = nullptr;
+    const HRESULT result = SHGetKnownFolderPath(FOLDERID_Startup, KF_FLAG_CREATE, nullptr, &folder);
+    if (FAILED(result)) return "Cannot find the Startup folder; check Windows permissions and save init.lua again";
+    const auto shortcut = std::filesystem::path(folder) / L"Relay.lnk";
+    CoTaskMemFree(folder);
+    return writeStartupShortcut(shortcut, target, enabled);
+}
+
 std::vector<AppEntry> listApps() {
     std::vector<AppEntry> out;
     Apartment apartment;

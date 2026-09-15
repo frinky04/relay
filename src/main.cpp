@@ -1,11 +1,19 @@
 #include "app.h"
 #include <windows.h>
+#include <shellapi.h>
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
+    runVelopack();
+    int argc = 0;
+    auto argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    bool startup = false;
+    for (int i = 1; argv && i < argc; ++i) if (wcscmp(argv[i], L"--startup") == 0) startup = true;
+    if (argv) LocalFree(argv);
     // Single instance: second launch just pokes the first.
     HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\Relay");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (HWND h = FindWindowW(L"Relay", nullptr)) PostMessageW(h, WM_HOTKEY, 1, 0);
+        if (!startup) if (HWND h = FindWindowW(L"Relay", nullptr)) PostMessageW(h, WM_HOTKEY, 1, 0);
+        CloseHandle(mutex);
         return 0;
     }
     App app;

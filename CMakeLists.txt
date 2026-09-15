@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(relay VERSION 0.1.0 LANGUAGES CXX)
+project(relay VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(imgui CONFIG REQUIRED)
 find_package(Lua REQUIRED)
 find_package(sol2 CONFIG REQUIRED)
+include(cmake/Velopack.cmake)
 
 add_library(relay_core STATIC
   src/config.cpp
@@ -22,9 +23,13 @@ add_library(relay_core STATIC
   src/window_command.cpp
   src/process_command.cpp
   src/lua_commands.cpp
+  src/desktop.cpp
+  src/updates.cpp
+  src/velopack_updates.cpp
 )
 target_include_directories(relay_core PUBLIC src ${LUA_INCLUDE_DIR})
-target_link_libraries(relay_core PUBLIC ${LUA_LIBRARIES} sol2::sol2 shell32 ole32 user32 urlmon)
+target_link_libraries(relay_core PUBLIC ${LUA_LIBRARIES} sol2::sol2 velopack_sdk
+  shell32 ole32 user32 urlmon shlwapi propsys shcore gdi32 uuid dwmapi winhttp)
 target_compile_definitions(relay_core PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN SOL_ALL_SAFETIES_ON=1)
 
 add_executable(relay WIN32
@@ -32,7 +37,6 @@ add_executable(relay WIN32
   src/app.cpp
   src/theme.cpp
   src/icons.cpp
-  src/desktop.cpp
 )
 
 target_include_directories(relay PRIVATE src ${LUA_INCLUDE_DIR})
@@ -57,26 +61,28 @@ add_executable(relay_test
   tests/watcher.cpp
   tests/commands.cpp
   tests/frecency.cpp
+  tests/updates.cpp
 )
 target_link_libraries(relay_test PRIVATE relay_core)
 target_compile_definitions(relay_test PRIVATE RELAY_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+foreach(target relay relay_test)
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:velopack_sdk> $<TARGET_FILE_DIR:${target}>/velopack_libc.dll)
+endforeach()
 if(MSVC)
   target_compile_options(relay_test PRIVATE /W3 /utf-8 /bigobj /MP)
 endif()
 enable_testing()
-foreach(suite support watcher commands frecency)
+foreach(suite support watcher commands frecency updates)
   add_test(NAME ${suite} COMMAND relay_test ${suite})
 endforeach()
 
-# Portable releases contain the app, resources, licenses and MSVC runtime.
+# Velopack packs this install tree into the installer and portable distribution.
 install(TARGETS relay RUNTIME DESTINATION .)
+install(FILES $<TARGET_FILE:velopack_sdk> DESTINATION . RENAME velopack_libc.dll)
 install(DIRECTORY assets plugins licenses DESTINATION .)
 install(FILES LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
 file(WRITE "${CMAKE_BINARY_DIR}/version.txt" "${PROJECT_VERSION}\n")
 install(FILES "${CMAKE_BINARY_DIR}/version.txt" DESTINATION .)
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
 include(InstallRequiredSystemLibraries)
-set(CPACK_GENERATOR ZIP)
-set(CPACK_PACKAGE_FILE_NAME "relay-${PROJECT_VERSION}-windows-x64")
-set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-include(CPack)
