@@ -30,7 +30,7 @@ struct MenuRow {
     std::string completion;             // input after the offered edit; empty for action-only rows
     std::string actionLabel;            // footer text for Enter
     bool danger = false;
-    bool stayOpen = false;              // clear the request after success and keep Relay open
+    bool updateCheck = false;           // preserve input and display native update status here
     // UI event handler; stayOpen records Shift+Enter. Only short UI operations
     // belong here. Command execution dispatches off the UI thread.
     std::function<void(bool stayOpen)> activate;

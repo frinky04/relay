@@ -23,7 +23,7 @@ Restart Relay after installing or removing apps to refresh its app list.
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use its default action. **Tab** fills names and adds quotes where needed; the hints show what comes next.
 
-Check for Updates keeps Relay open and shows progress and the result below the app list.
+Check for Updates keeps your input and selection in place and shows progress and the result on its action row.
 
 **Kill requires two Enter presses and discards unsaved work.**
 
@@ -50,7 +50,7 @@ Add Lua commands through `/relay Open Plugins Folder`, then run `/relay Reload P
 
 ## Updates
 
-Relay downloads updates in the background on startup and applies them on the next restart. Run `/relay Check for Updates` to check now, then `/relay Restart to Update` when an update is ready. Update notices appear below the app list. Settings, user plugins and launch history survive updates.
+Relay downloads updates in the background on startup and applies them on the next restart. Run `/relay Check for Updates` to check now, then `/relay Restart to Update` when an update is ready. Check results appear on the Check for Updates row; background notices remain available below the app list. Settings, user plugins and launch history survive updates.
 
 Coming from v0.1.0? Quit the old copy and install the new release once.
 

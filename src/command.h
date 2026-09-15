@@ -24,7 +24,7 @@ struct Verb {
     bool danger = false;
     Run run;
     std::string help;
-    bool stayOpen = false; // native actions whose result is read in Relay
+    bool updateCheck = false; // native update status stays on this action row
 };
 struct Preview { std::string title, error; };
 struct Command {

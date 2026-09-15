@@ -77,7 +77,7 @@ LRESULT App::handle(UINT m, WPARAM w, LPARAM l) {
         logf("update: %s | %s", p->first.c_str(), p->second.c_str());
         m_notices.push({std::move(p->first), std::move(p->second), GetTickCount64(), "updates"});
         delete p;
-        if (m_visible) refreshNotices();
+        if (m_visible) { refreshUpdateRows(); refreshNotices(); }
         return 0;
     }
     case WM_APP_CONFIG: {
@@ -501,15 +501,26 @@ void App::refreshNotices() {
             m_notices.dismiss(tick);
             refreshNotices();
         };
-        if (notice.key == "updates" && m_noticeGeneration == m_generation) {
-            m_selected = (int)m_results.size();
-            m_noticeGeneration = 0;
-        }
         m_results.push_back(std::move(row));
     });
     m_selected = std::clamp(m_selected, 0, std::max(0, (int)m_results.size() - 1));
     m_armedIdx = -1;
     ++m_rowsRevision;
+}
+
+void App::refreshUpdateRows() {
+    if (m_waiting) return;
+    // Update status is shared across queries; repaint its action in place.
+    // Never submit input, move selection or reveal the window here.
+    m_notices.forEach([this](const Notice& notice) {
+        if (notice.key != "updates") return;
+        for (auto& row : m_results) {
+            if (!row.updateCheck) continue;
+            row.title = notice.title;
+            row.subtitle = notice.body;
+            row.kind = "Result";
+        }
+    });
 }
 
 void App::takeEngineResults() {
@@ -525,9 +536,9 @@ void App::takeEngineResults() {
         for (size_t i = 0; i < result->view.rows.size(); ++i) {
             auto row = std::move(result->view.rows[i]);
             if (!row.actionLabel.empty()) {
-                row.activate = [this, generation = m_generation, i, index = m_results.size(), title = row.title, kind = row.kind, keepOpen = row.stayOpen](bool stayOpen) {
+                row.activate = [this, generation = m_generation, i, index = m_results.size(), title = row.title, kind = row.kind, updateCheck = row.updateCheck](bool stayOpen) {
                     if (!m_engine.execute(generation, i, true)) return;
-                    m_pendingAction = PendingAction{generation, index, stayOpen || keepOpen, keepOpen};
+                    m_pendingAction = PendingAction{generation, index, stayOpen || updateCheck, updateCheck};
                     m_results[index].title = title;
                     m_results[index].kind = kind;
                     m_results[index].subtitle = "Running";
@@ -537,6 +548,7 @@ void App::takeEngineResults() {
         }
         ++m_rowsRevision;
         m_armedIdx = -1;
+        refreshUpdateRows();
         refreshNotices();
     }
     if (auto done = m_engine.takeCompletion()) {
@@ -544,9 +556,9 @@ void App::takeEngineResults() {
         if (!done->error.empty()) logf("command: %s", done->error.c_str());
         if (!pending || done->generation != m_generation || pending->generation != done->generation) return;
         if (done->error.empty()) {
+            if (pending->preserveInput) return;
             if (pending->stayOpen) {
                 writeCompletion("");
-                if (pending->showNotice) m_noticeGeneration = m_generation;
                 if (GetForegroundWindow() != m_hwnd) {
                     ImGui::GetIO().ClearInputKeys();
                     ImGui::GetIO().ClearInputMouse();
@@ -566,7 +578,6 @@ void App::takeEngineResults() {
 // Only the UI owns key handling and confirmation. The engine runs the action
 // captured for this exact row and input generation.
 void App::execute(int i, bool stayOpen, bool fromEnter) {
-    m_noticeGeneration = 0;
     if (m_waiting || m_pendingAction || m_spanText != m_input || i < 0 || i >= (int)m_results.size()) return;
     const MenuRow row = m_results[i]; // activation can replace the rows
     if (!row.activate) { autofill(i); return; }
@@ -755,7 +766,7 @@ void App::drawUi() {
         if (n && !m_waiting) {
             const bool next = ImGui::IsKeyPressed(ImGuiKey_DownArrow) || (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N));
             const bool prev = ImGui::IsKeyPressed(ImGuiKey_UpArrow) || (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P));
-            if (next || prev) { m_armedIdx = -1; m_noticeGeneration = 0; }
+            if (next || prev) { m_armedIdx = -1; }
             if (next) m_selected = (m_selected + 1) % n;
             if (prev) m_selected = (m_selected + n - 1) % n;
             if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && canFill(m_selected)) { autofill(m_selected); ImGui::End(); return; }
@@ -839,7 +850,7 @@ void App::drawUi() {
             else glyph = "›";
         }
         const bool hovered = !m_peeking && !m_waiting && io.MousePos.x >= 0 && io.MousePos.x < W && io.MousePos.y >= y0 && io.MousePos.y < y1 && io.MousePos.y < footY;
-        if (hovered && mouseMoved && m_selected != idx) { m_selected = idx; m_armedIdx = -1; m_noticeGeneration = 0; }
+        if (hovered && mouseMoved && m_selected != idx) { m_selected = idx; m_armedIdx = -1; }
         if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { dl->PopClipRect(); execute(idx, false); ImGui::End(); return; }
         const int digit = idx - firstTarget + 1;
         const float digitAlpha = digit >= 1 && digit <= shortcutCount && !danger ? altAlpha : 0.0f;

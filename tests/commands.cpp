@@ -580,12 +580,12 @@ int runCommandTests() {
             "update verbs dispatch separate background check and restart requests");
         for (const auto* input : {"/relay Check for Updates", "Check for Updates"}) {
             auto checkRows = command::evaluate(catalog, input);
-            check(checkRows.view.rows.size() == 1 && checkRows.view.rows[0].stayOpen,
-                "explicit and global update checks keep Relay open");
+            check(checkRows.view.rows.size() == 1 && checkRows.view.rows[0].updateCheck,
+                "explicit and global update checks identify their in-place status row");
         }
         for (const auto& row : actions.view.rows)
-            check(row.stayOpen == (row.actionLabel == "Check for Updates"),
-                "only Check for Updates overrides the normal success behavior");
+            check(row.updateCheck == (row.actionLabel == "Check for Updates"),
+                "only Check for Updates retains input and displays update status");
         auto version = command::evaluate(catalog, "/relay version");
         check(version.view.rows.size() == 1 && version.view.rows[0].title == "Copy Version", "typing version discovers Copy Version through normal verb matching");
         auto globalVersion = command::evaluate(catalog, "version");
