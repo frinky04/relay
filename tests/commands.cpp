@@ -495,10 +495,13 @@ int runCommandTests() {
             "bare arithmetic previews the result without copying");
         if (result.view.rows.empty()) continue;
         check(result.view.text == expression && result.view.spans.empty() && result.view.rows[0].completion.empty() &&
-            result.view.rows[0].kind == "Result" && result.view.rows[0].actionLabel == "Copy", "math preserves input and offers Enter Copy only");
+            result.view.rows[0].kind == "Result" && result.view.rows[0].actionLabel == "Copy" &&
+            result.view.rows[0].stacked && result.view.rows[0].subtitle == expression,
+            "math shows the expression below the result and leaves Copy in the footer");
         check(result.actions[0] && result.actions[0]().empty() && copied == expected, "Enter copies the displayed calculator result");
         auto explicitResult = query("/calc " + expression);
         check(explicitResult.view.rows.size() == 1 && explicitResult.view.rows[0].title == expected &&
+            explicitResult.view.rows[0].stacked && explicitResult.view.rows[0].subtitle == expression &&
             explicitResult.actions[0]().empty() && copied == expected, "explicit calculator uses the same preview and execution");
     }
     for (const auto expression : {"5", "-5", "(5)", "pi", "e", "1e3", "(-pi)", "5 +", "1/0", "hello + world",
@@ -519,9 +522,10 @@ int runCommandTests() {
     check(domain.view.rows[0].subtitle == "At byte 1: Use a nonnegative number for sqrt" && !domain.actions[0],
         "explicit errors preserve the parser's recovery message and expression byte position");
     check(hint(query("/calc \"5 +").view) == "Close the quote ", "explicit math keeps normal quote rules");
-    for (const auto input : {"/calc 32 + 32", "/calc   32  +  32  ", "/calc \"32 + 32\""}) {
+    for (const auto input : {"/calc 32 + 32", "/calc   32  +  32  ", "/calc \"32 + 32\"", "/calc \"32\n+\t32\""}) {
         auto result = query(input);
         check(result.view.rows.size() == 1 && result.view.rows[0].title == "64" && result.view.rows[0].completion.empty() &&
+            result.view.rows[0].subtitle == "32 + 32" && result.view.rows[0].stacked &&
             result.view.text == input && result.view.spans.size() == 2 && result.view.spans[1].end == std::string(input).size() &&
             result.actions[0]().empty() && copied == "64", "calculator consumes the full expression without changing input or Tab behavior");
     }
@@ -632,12 +636,12 @@ int runCommandTests() {
         copied.clear();
         auto actions = command::evaluate(catalog, noun.view.rows[0].completion);
         check(actions.view.rows.size() == 8 && actions.view.rows[0].title == "Edit Config" &&
-            actions.view.rows[1].title == "Open Plugins Folder" && actions.view.rows[2].title == "Reload Plugins" &&
-            actions.view.rows[3].title == "Copy Version" && actions.view.rows[4].title == "Check for Updates" &&
-            actions.view.rows[5].title == "Restart to Update" && actions.view.rows[6].title == "Rescan Apps" && actions.view.rows[7].title == "Quit",
+            actions.view.rows[1].title == "Rescan Apps" && actions.view.rows[2].title == "Open Plugins Folder" &&
+            actions.view.rows[3].title == "Reload Plugins" && actions.view.rows[4].title == "Check for Updates" &&
+            actions.view.rows[5].title == "Restart to Update" && actions.view.rows[6].title == "Copy Version" && actions.view.rows[7].title == "Quit",
             "relay exposes eight ordered verbs with config as the default");
         check(hint(actions.view) == "Edit Config " && actions.view.slots[0].kind == Slot::Verb, "entering a multi-verb command ghosts its default verb");
-        check(actions.view.rows[3].subtitle == "Relay 1.2.3-test" && copied.empty() && quits == 0 && reloads == 0 &&
+        check(actions.view.rows[6].subtitle == "Relay 1.2.3-test" && copied.empty() && quits == 0 && reloads == 0 &&
             checks == 0 && restarts == 0 && edited.empty() && folder.empty() && !std::filesystem::exists(directory), "discovery shows the version without performing actions or creating files");
         for (const auto& row : actions.view.rows)
             check(row.completion.empty() && !row.subtitle.empty(), "native actions offer descriptions and execution only");
@@ -660,8 +664,8 @@ int runCommandTests() {
         check(!actions.actions[0]().empty() && edited == configPath,
             "Edit Config opens a damaged reference for repair and reports the refresh error");
         { std::ofstream file(configPath); file << "return {}"; }
-        check(actions.actions[1]().empty() && folder == pluginsPath && std::filesystem::is_directory(pluginsPath), "Open Plugins Folder creates and opens the user directory");
-        check(actions.actions[3]().empty() && copied == actions.view.rows[3].subtitle, "Copy Version copies exactly the visible version");
+        check(actions.actions[2]().empty() && folder == pluginsPath && std::filesystem::is_directory(pluginsPath), "Open Plugins Folder creates and opens the user directory");
+        check(actions.actions[6]().empty() && copied == actions.view.rows[6].subtitle, "Copy Version copies exactly the visible version");
         check(command::evaluate(catalog, "/relay Reload Plugins").actions[0]().empty() && reloads == 1 &&
             command::evaluate(catalog, "reload").actions[0]().empty() && reloads == 2,
             "explicit and bare Reload Plugins dispatch the same native request");
@@ -700,7 +704,7 @@ int runCommandTests() {
         std::filesystem::remove(pluginsPath);
         { std::ofstream file(pluginsPath); file << "not a directory"; }
         folder.clear();
-        check(!actions.actions[1]().empty() && folder.empty(), "a blocked plugins directory fails before opening anything");
+        check(!actions.actions[2]().empty() && folder.empty(), "a blocked plugins directory fails before opening anything");
         std::filesystem::remove(pluginsPath);
         std::filesystem::remove(configPath);
         std::filesystem::remove(directory / "init.lua.relay-backup");

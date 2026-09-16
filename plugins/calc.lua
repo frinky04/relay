@@ -288,7 +288,7 @@ function calculator.format(value)
     return (text:gsub(",", "."))
 end
 
--- Command adapter: recognition, preview and Copy share the parser above.
+-- Recognition and preview use the parser above; Copy uses the prepared result.
 local function calculate(text)
   local value, err = calculator.evaluate(text)
   if value == nil then
@@ -301,22 +301,23 @@ end
 
 return {
   name = "calc",
-  help = "Calculate and copy the result",
+  help = "Calculate an expression",
   args = { { name = "Expression", rest = true } },
   recognize = function(text)
     local value, _, hasOperation = calculator.evaluate(text)
     if value ~= nil and hasOperation then return { text } end
   end,
-  preview = function(args)
-    return calculate(args[1])
-  end,
   verbs = {
     {
       name = "Copy",
-      run = function(args)
+      preview = function(args)
         local result, err = calculate(args[1])
-        if not result then return err end
-        return host.copy(result)
+        if not result then return nil, err end
+        local expression = args[1]:gsub("%s+", " "):match("^%s*(.-)%s*$")
+        return { title = result, subtitle = expression, value = result }
+      end,
+      run = function(_, value)
+        return host.copy(value)
       end,
     },
   },

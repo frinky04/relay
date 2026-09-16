@@ -9,7 +9,7 @@ local function upvalue(fn, wanted)
         if name == wanted then return value end
     end
 end
-local calculator = upvalue(upvalue(plugin.preview, "calculate"), "calculator")
+local calculator = upvalue(upvalue(plugin.verbs[1].preview, "calculate"), "calculator")
 local passed, failed = 0, 0
 
 local function eq(actual, expected)

@@ -28,29 +28,29 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
         // A damaged reference or read-only file must still open for repair.
         const auto editError = edit(config);
         return editError.empty() ? referenceError : editError;
-    }, "Open init.lua in your default app; saves apply automatically"});
+    }, "init.lua; applies on save"});
+    cmd.verbs.push_back({"Rescan Apps", false, [rescanApps = std::move(rescanApps)](auto&) {
+        return rescanApps();
+    }, "Refresh app list; keep history", false, true});
     cmd.verbs.push_back({"Open Plugins Folder", false, [plugins = std::move(plugins), openFolder = std::move(openFolder)](auto&) {
         auto error = ensureDirectory(plugins);
         return error.empty() ? openFolder(plugins) : error;
-    }, "Open your Lua plugins; run Reload Plugins after changes"});
+    }, "Reload after editing"});
     cmd.verbs.push_back({"Reload Plugins", false, [reloadPlugins = std::move(reloadPlugins)](auto&) {
         return reloadPlugins();
-    }, "Reload bundled and user Lua commands after editing plugins"});
+    }, "Apply Lua command changes"});
+    cmd.verbs.push_back({"Check for Updates", false, [checkUpdates = std::move(checkUpdates)](auto&) {
+        return checkUpdates();
+    }, "Download updates in background", true, true});
+    cmd.verbs.push_back({"Restart to Update", false, [restartToUpdate = std::move(restartToUpdate)](auto&) {
+        return restartToUpdate();
+    }, "Install downloaded update"});
     const std::string label = "Relay " + version;
     cmd.verbs.push_back({"Copy Version", false, [label, copy = std::move(copy)](auto&) {
         return copy(label);
     }, label});
-    cmd.verbs.push_back({"Check for Updates", false, [checkUpdates = std::move(checkUpdates)](auto&) {
-        return checkUpdates();
-    }, "Check for a new release and download it in the background", true, true});
-    cmd.verbs.push_back({"Restart to Update", false, [restartToUpdate = std::move(restartToUpdate)](auto&) {
-        return restartToUpdate();
-    }, "Apply the downloaded update and restart Relay"});
-    cmd.verbs.push_back({"Rescan Apps", false, [rescanApps = std::move(rescanApps)](auto&) {
-        return rescanApps();
-    }, "Refresh installed apps while keeping launch history", false, true});
     cmd.verbs.push_back({"Quit", false, [quit = std::move(quit)](auto&) {
         return quit();
-    }, "Exit Relay; launch it again to use the hotkey"});
+    }, "Reopen Relay to restore hotkey"});
     return cmd;
 }
