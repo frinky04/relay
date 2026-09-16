@@ -1,11 +1,13 @@
 #include "engine.h"
 #include <exception>
 #include <utility>
+#include <algorithm>
+#include <stdexcept>
 
 Engine::~Engine() { stop(); }
-void Engine::start(Loader loader, PluginLoader plugins, std::function<void()> wake) {
-    m_thread = std::thread([this, loader = std::move(loader), plugins = std::move(plugins), wake = std::move(wake)] {
-        work(loader, plugins, wake);
+void Engine::start(Loader loader, PluginLoader plugins, std::function<void()> wake, AppLoader apps) {
+    m_thread = std::thread([this, loader = std::move(loader), plugins = std::move(plugins), wake = std::move(wake), apps = std::move(apps)] {
+        work(loader, plugins, wake, apps);
     });
 }
 void Engine::stop() {
@@ -42,9 +44,10 @@ std::optional<Engine::Completion> Engine::takeCompletion() {
     return std::exchange(m_completion, std::nullopt);
 }
 
-void Engine::work(Loader loader, PluginLoader plugins, const std::function<void()>& wake) {
+void Engine::work(Loader loader, PluginLoader plugins, const std::function<void()>& wake, AppLoader apps) {
     // The catalog, evaluations and every Lua reference live and die here.
     bool reloadRequested = false;
+    bool rescanRequested = false;
     std::vector<command::Command> native;
     std::vector<command::Command> commands;
     std::string loadError;
@@ -54,7 +57,8 @@ void Engine::work(Loader loader, PluginLoader plugins, const std::function<void(
         return next;
     };
     try {
-        native = loader([&]() -> std::string { reloadRequested = true; return {}; });
+        native = loader([&]() -> std::string { reloadRequested = true; return {}; },
+            [&]() -> std::string { rescanRequested = true; return {}; });
         commands = native;
         commands = load();
     }
@@ -84,6 +88,25 @@ void Engine::work(Loader loader, PluginLoader plugins, const std::function<void(
             catch (const std::exception& e) { error = e.what(); }
             catch (...) { error = "Command failed; edit the request and try again"; }
             bool reloaded = false;
+            if (std::exchange(rescanRequested, false) && error.empty()) {
+                try {
+                    auto app = apps();
+                    auto nativeCopy = app;
+                    const auto nativeApp = std::find_if(native.begin(), native.end(), [](auto& cmd) { return cmd.name == "app"; });
+                    const auto activeApp = std::find_if(commands.begin(), commands.end(), [](auto& cmd) { return cmd.name == "app"; });
+                    if (nativeApp == native.end() || activeApp == commands.end())
+                        throw std::runtime_error("App command unavailable");
+                    // Build both replacements before releasing the displayed actions.
+                    // Other commands, especially their Lua state, stay in place.
+                    current = {};
+                    evaluated = 0;
+                    *nativeApp = std::move(nativeCopy);
+                    *activeApp = std::move(app);
+                    reloaded = true;
+                } catch (...) {
+                    error = "Cannot rescan apps; try /relay Rescan Apps again";
+                }
+            }
             if (std::exchange(reloadRequested, false) && error.empty()) {
                 try {
                     auto next = load();

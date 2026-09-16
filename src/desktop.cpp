@@ -5,6 +5,7 @@
 #include <shobjidl.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <propkey.h>
 #include <wrl/client.h>
 #include <algorithm>
 #include <chrono>
@@ -33,13 +34,14 @@ struct Apartment {
     HRESULT result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     ~Apartment() { if (SUCCEEDED(result)) CoUninitialize(); }
 };
-DWORD shellOpen(const std::string& target, const wchar_t* parameters = nullptr) {
+DWORD shellOpen(const std::string& target, const wchar_t* parameters = nullptr, const wchar_t* verb = L"open") {
     Apartment apartment;
     if (FAILED(apartment.result)) return ERROR_NOT_READY;
     std::wstring file = widen(target);
     SHELLEXECUTEINFOW sei{ sizeof(sei) };
     sei.fMask = SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC;
-    sei.lpVerb = L"open";
+    if (target.starts_with("shell:")) sei.fMask |= SEE_MASK_INVOKEIDLIST;
+    sei.lpVerb = verb;
     sei.lpFile = file.c_str();
     sei.lpParameters = parameters;
     sei.nShow = SW_SHOWNORMAL;
@@ -93,7 +95,8 @@ std::vector<AppEntry> listApps() {
         ComPtr<IEnumShellItems> en;
         if (SUCCEEDED(folder->BindToHandler(nullptr, BHID_EnumItems, IID_PPV_ARGS(&en)))) {
             ComPtr<IShellItem> item;
-            while (en->Next(1, &item, nullptr) == S_OK) {
+            HRESULT next;
+            while ((next = en->Next(1, &item, nullptr)) == S_OK) {
                 PWSTR disp = nullptr, parse = nullptr;
                 if (SUCCEEDED(item->GetDisplayName(SIGDN_NORMALDISPLAY, &disp)) &&
                     SUCCEEDED(item->GetDisplayName(SIGDN_PARENTRELATIVEPARSING, &parse))) {
@@ -106,16 +109,41 @@ std::vector<AppEntry> listApps() {
                 if (parse) CoTaskMemFree(parse);
                 item.Reset();
             }
+            if (FAILED(next)) throw std::runtime_error("Cannot finish listing installed apps; run /relay Rescan Apps again");
         } else throw std::runtime_error("Cannot list installed apps; restart Relay");
     } else throw std::runtime_error("Cannot access installed apps; restart Relay");
     std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return fuzzy::lower(a.name) < fuzzy::lower(b.name); });
     return out;
 }
 
-std::string launchApp(const std::string& parsing) {
-    const auto error = shellOpen(parsing);
-    if (!error) return {};
-    return "Windows could not open this app (" + std::to_string(error) + "); check its installation and try again";
+std::string runApp(const std::string& parsing, AppAction action,
+    const std::function<std::string(const std::string&)>& copy) {
+    if (action == AppAction::Open || action == AppAction::Admin) {
+        // Ask the shell to invoke the original app entry, retaining shortcut arguments.
+        const auto error = shellOpen(parsing, nullptr, action == AppAction::Admin ? L"runas" : L"open");
+        if (!error) return {};
+        if (error == ERROR_CANCELLED) return "Launch cancelled; try again and approve any Windows prompt";
+        return action == AppAction::Admin
+            ? "Cannot run this app as administrator; try Open or use its Start menu entry"
+            : "Windows could not open this app; check its installation and run /relay Rescan Apps";
+    }
+    Apartment apartment;
+    ComPtr<IShellItem2> item;
+    if (FAILED(apartment.result) || FAILED(SHCreateItemFromParsingName(widen(parsing).c_str(), nullptr, IID_PPV_ARGS(&item))))
+        return "App unavailable; run /relay Rescan Apps and select it again";
+    PWSTR target = nullptr;
+    const auto result = item->GetString(PKEY_Link_TargetParsingPath, &target);
+    const std::filesystem::path path = SUCCEEDED(result) && target ? target : L"";
+    CoTaskMemFree(target);
+    // Packaged apps may expose only a shell identity, not a file path.
+    if (!path.is_absolute()) return "This app has no file path available; use Open instead";
+    if (action == AppAction::CopyPath) return copy(narrow(path.wstring()));
+    PIDLIST_ABSOLUTE id = nullptr;
+    if (FAILED(SHParseDisplayName(path.c_str(), nullptr, &id, 0, nullptr)))
+        return "Cannot find the app's file; run /relay Rescan Apps and try again";
+    const auto opened = SHOpenFolderAndSelectItems(id, 0, nullptr, 0);
+    CoTaskMemFree(id);
+    return SUCCEEDED(opened) ? "" : "Cannot open the file location; check the app's installation and try again";
 }
 
 std::string openUrl(const std::string& url) {
@@ -199,11 +227,53 @@ std::vector<WindowEntry> listWindows() {
     return std::move(enumeration.found);
 }
 
-std::string activateWindow(const WindowTarget& target) {
+std::string runWindow(const WindowTarget& target, WindowAction action) {
     DWORD pid = 0;
     const HWND h = target.hwnd;
     if (!IsWindow(h) || GetWindowThreadProcessId(h, &pid) != target.threadId || pid != target.processId)
         return "Window unavailable; edit the query to refresh windows";
+    if (action == WindowAction::Close)
+        return PostMessageW(h, WM_CLOSE, 0, 0) ? "" : "Cannot close the window; close it from the app instead";
+    if (action == WindowAction::Minimize || action == WindowAction::Maximize)
+        return ShowWindowAsync(h, action == WindowAction::Minimize ? SW_MINIMIZE : SW_MAXIMIZE)
+            ? "" : "Cannot change the window; use its title bar controls instead";
+    if (action == WindowAction::MoveToOtherMonitor) {
+        std::vector<MONITORINFO> monitors;
+        if (!EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM data) -> BOOL {
+            MONITORINFO info{sizeof(info)};
+            if (!GetMonitorInfoW(monitor, &info)) return FALSE;
+            reinterpret_cast<std::vector<MONITORINFO>*>(data)->push_back(info);
+            return TRUE;
+        }, reinterpret_cast<LPARAM>(&monitors))) return "Cannot read displays; check Windows display settings and try again";
+        if (monitors.size() < 2) return "No other monitor available; connect or enable another display";
+        std::sort(monitors.begin(), monitors.end(), [](const auto& a, const auto& b) {
+            return a.rcMonitor.left != b.rcMonitor.left ? a.rcMonitor.left < b.rcMonitor.left : a.rcMonitor.top < b.rcMonitor.top;
+        });
+        MONITORINFO source{sizeof(source)};
+        WINDOWPLACEMENT placement{sizeof(placement)};
+        if (!GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &source) || !GetWindowPlacement(h, &placement))
+            return "Cannot read the window position; select the window again";
+        const auto current = std::find_if(monitors.begin(), monitors.end(), [&](const auto& info) {
+            return EqualRect(&info.rcMonitor, &source.rcMonitor);
+        });
+        if (current == monitors.end()) return "Displays changed; try moving the window again";
+        const auto& destination = monitors[(std::distance(monitors.begin(), current) + 1) % monitors.size()];
+        // WINDOWPLACEMENT uses workspace coordinates for ordinary top-level windows.
+        const bool tool = (GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) != 0;
+        const auto& from = tool ? source.rcWork : source.rcMonitor;
+        const auto& to = tool ? destination.rcWork : destination.rcMonitor;
+        auto& rect = placement.rcNormalPosition;
+        const LONG width = std::min(rect.right - rect.left, destination.rcWork.right - destination.rcWork.left);
+        const LONG height = std::min(rect.bottom - rect.top, destination.rcWork.bottom - destination.rcWork.top);
+        rect.left = to.left + std::clamp(rect.left - from.left, 0L, destination.rcWork.right - destination.rcWork.left - width);
+        rect.top = to.top + std::clamp(rect.top - from.top, 0L, destination.rcWork.bottom - destination.rcWork.top - height);
+        rect.right = rect.left + width;
+        rect.bottom = rect.top + height;
+        placement.ptMaxPosition = {-1, -1};
+        placement.ptMinPosition = {-1, -1};
+        placement.flags = (placement.flags & WPF_RESTORETOMAXIMIZED) | WPF_ASYNCWINDOWPLACEMENT;
+        return SetWindowPlacement(h, &placement) ? "" : "Cannot move the window; try moving it from its title bar";
+    }
     if (IsIconic(h) && !ShowWindowAsync(h, SW_RESTORE))
         return "Cannot restore the window; try switching again";
     DWORD fgThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);

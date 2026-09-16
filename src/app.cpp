@@ -174,27 +174,30 @@ bool App::init(HINSTANCE inst) {
         auto* notice = new std::pair<std::string, std::string>(std::move(title), std::move(body));
         if (!PostMessageW(hwnd, WM_APP_UPDATE_NOTICE, 0, (LPARAM)notice)) delete notice;
     });
-    m_engine.start([this, hwnd, report, copy](std::function<std::string()> reloadPlugins) {
-        std::vector<desktop::AppEntry> apps;
-        try { apps = desktop::listApps(); }
-        catch (const std::exception& e) { report(e.what()); }
-        auto history = std::make_shared<Frecency>(fs::path(dataDir()) / L"frecency.tsv");
+    auto history = std::make_shared<Frecency>(fs::path(dataDir()) / L"frecency.tsv");
+    auto runApp = [copy](const std::string& target, desktop::AppAction action) { return desktop::runApp(target, action, copy); };
+    auto scanApps = [history, report, runApp] { return appCommand(desktop::listApps(), runApp, history, report); };
+    m_engine.start([this, hwnd, report, copy, history, runApp, scanApps](auto reloadPlugins, auto rescanApps) {
         auto error = history->load();
         if (!error.empty()) report(std::move(error));
         std::vector<command::Command> commands;
-        commands.push_back(appCommand(std::move(apps), desktop::launchApp, history, report));
-        commands.push_back(windowCommand(desktop::listWindows, desktop::activateWindow));
+        try { commands.push_back(scanApps()); }
+        catch (const std::exception& e) {
+            report(e.what());
+            commands.push_back(appCommand({}, runApp, history, report));
+        }
+        commands.push_back(windowCommand(desktop::listWindows, desktop::runWindow));
         commands.push_back(processCommand(desktop::listProcesses, desktop::killProcess));
         commands.push_back(relayCommand(Config::path(), fs::path(dataDir()) / L"plugins", RELAY_VERSION,
             desktop::editTextFile, desktop::openFolder, copy, [hwnd]() -> std::string {
                 if (PostMessageW(hwnd, WM_APP_QUIT, 0, 0)) return {};
                 return "Cannot request shutdown; try Quit again";
-            }, std::move(reloadPlugins), [this] { return m_updates.check(); }, [this] { return m_updates.restart(); }));
+            }, std::move(reloadPlugins), [this] { return m_updates.check(); }, [this] { return m_updates.restart(); }, std::move(rescanApps)));
         return commands;
     }, [copy, report](std::vector<command::Command>& commands) {
         loadLuaCommands(commands, fs::path(exeDir()) / L"plugins", copy, desktop::openUrl, report);
         loadLuaCommands(commands, fs::path(dataDir()) / L"plugins", copy, desktop::openUrl, report);
-    }, [hwnd] { PostMessageW(hwnd, WM_APP_ENGINE, 0, 0); });
+    }, [hwnd] { PostMessageW(hwnd, WM_APP_ENGINE, 0, 0); }, scanApps);
     startWatcher();
     registerHotkey();
     return true;
@@ -683,6 +686,12 @@ void App::drawUi() {
     if (m_focusInput && !m_peeking) { ImGui::SetKeyboardFocusHere(); m_focusInput = false; }
     ImGui::PushID((int)m_inputRevision);
     ImGui::InputText("##q", m_input, sizeof(m_input), ImGuiInputTextFlags_CallbackAlways, caretCallback, &m_caretToEnd);
+    // Enter and clicks outside InputText deactivate it. Relay has one editor:
+    // reactivate its retained state without resetting the caret, selection or
+    // undo history. Never take focus from another app or an active widget.
+    const ImGuiID inputId = ImGui::GetItemID();
+    if (!m_peeking && GetForegroundWindow() == m_hwnd && ImGui::GetActiveID() == 0 && ImGui::GetInputTextState(inputId))
+        ImGui::SetActiveID(inputId, ImGui::GetCurrentWindow());
     ImGui::PopID();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();

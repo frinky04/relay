@@ -4,6 +4,7 @@
 #include <vector>
 #include <filesystem>
 #include <cstdint>
+#include <functional>
 
 // Windows operations retained from the old feature adapters. Enumeration,
 // launching and typing may block; callers must schedule them off the UI thread.
@@ -39,7 +40,9 @@ struct ProcessEntry {
 };
 
 std::vector<AppEntry> listApps();
-std::string launchApp(const std::string& parsing); // empty on success, otherwise a recovery message
+enum class AppAction { Open, Admin, FileLocation, CopyPath };
+std::string runApp(const std::string& parsing, AppAction action,
+    const std::function<std::string(const std::string&)>& copy);
 std::string openUrl(const std::string& url); // host validates HTTP(S) before dispatch
 std::string editTextFile(const std::filesystem::path& path); // default app, then Notepad if opening fails
 std::string openFolder(const std::filesystem::path& path);
@@ -48,7 +51,8 @@ std::string setStartup(bool enabled);
 std::string writeStartupShortcut(const std::filesystem::path& shortcut,
     const std::filesystem::path& target, bool enabled);
 std::vector<WindowEntry> listWindows();
-std::string activateWindow(const WindowTarget& target);
+enum class WindowAction { Switch, Close, Minimize, Maximize, MoveToOtherMonitor };
+std::string runWindow(const WindowTarget& target, WindowAction action);
 std::vector<ProcessEntry> listProcesses();
 std::string killProcess(const ProcessTarget& target);
 void typeInto(const std::string& text);

@@ -72,7 +72,7 @@ int runCommandTests() {
     std::string launched, copied, opened, openError;
     auto openUrl = [&](const std::string& url) { opened = url; return openError; };
     auto apps = appCommand({{"Firefox", "firefox"}, {"Google Chrome", "chrome"}, {"Editor", "editor1"}, {"Editor", "editor2"}},
-        [&](const std::string& target) { launched = target; return target == "chrome" ? "Install Chrome and try again" : ""; });
+        [&](const std::string& target, desktop::AppAction) { launched = target; return target == "chrome" ? "Install Chrome and try again" : ""; });
     auto copy = [&](const std::string& value) { copied = value; return value == "fail" ? "Clipboard busy; try again" : ""; };
     {
         const desktop::ProcessTarget first{101, 1000}, second{102, 2000}, third{103, 3000};
@@ -166,13 +166,15 @@ int runCommandTests() {
             {first, "Notes", "Code", "code.exe"}, {second, "Notes", "Code", "code.exe"},
             {third, "Canvas", "Paint", "paint.exe"}};
         desktop::WindowTarget switched{};
+        desktop::WindowAction windowAction{};
         int enumerations = 0, switches = 0;
         bool fail = false;
         std::vector<command::Command> catalog{windowCommand([&] {
             ++enumerations;
             if (fail) throw std::runtime_error("Enumeration failed");
             return windows;
-        }, [&](const auto& target) -> std::string {
+        }, [&](const auto& target, desktop::WindowAction action) -> std::string {
+            windowAction = action;
             ++switches;
             if (std::none_of(windows.begin(), windows.end(), [&](auto& window) { return window.target == target; }))
                 return "Window unavailable; edit the query to refresh windows";
@@ -183,7 +185,7 @@ int runCommandTests() {
         command::evaluate(catalog, "/"); command::evaluate(catalog, "/wind"); command::evaluate(catalog, "");
         check(enumerations == 0, "command discovery and empty input do not enumerate windows");
         auto rows = command::evaluate(catalog, "/window ");
-        check(enumerations == 1 && switches == 0 && rows.view.rows.size() == 3 && hint(rows.view) == "<Window> ", "window choices refresh on entering the command without switching");
+        check(enumerations == 1 && switches == 0 && rows.view.rows.size() == 3 && hint(rows.view) == "<Window> Switch ", "window choices refresh on entering the command without switching");
         check(rows.view.rows[0].title == "Notes" && rows.view.rows[0].subtitle != rows.view.rows[1].subtitle &&
             rows.view.rows[0].completion != rows.view.rows[1].completion, "duplicate windows have distinct descriptions and completion references");
         check(rows.view.rows[2].subtitle == "Paint" && rows.view.rows[2].iconKey == "paint.exe", "window rows expose app names and existing icon keys");
@@ -201,14 +203,23 @@ int runCommandTests() {
             "global window completion resolves the same target after reordering");
         for (size_t i = 0; i < rows.view.rows.size(); ++i) {
             auto completed = command::evaluate(catalog, rows.view.rows[i].completion);
-            check(completed.view.rows.size() == 1 && completed.view.rows[0].actionLabel == "Switch" &&
-                completed.view.rows[0].completion.empty(), "Tab completion resolves to an action-only Switch row");
+            check(completed.view.rows.size() == 5 && completed.view.rows[0].actionLabel == "Switch" &&
+                completed.view.rows[0].completion.empty(), "Tab completion offers window verbs with Switch first");
             check(completed.actions[0]().empty(), "completed window reference executes");
             const auto selected = switched;
             check(rows.actions[i]().empty() && switched == selected, "fresh enumeration and old snapshots preserve exact target identity across reorder");
         }
         auto explicitWindow = command::evaluate(catalog, "/window Canvas Switch");
         check(explicitWindow.view.spans.size() == 3 && explicitWindow.actions[0]().empty() && switched == third, "unique window titles can be typed with an explicit verb");
+        for (const auto& [verb, action] : std::vector<std::pair<std::string, desktop::WindowAction>>{
+                {"Close", desktop::WindowAction::Close}, {"Minimize", desktop::WindowAction::Minimize},
+                {"Maximize", desktop::WindowAction::Maximize}, {"Move to Other Monitor", desktop::WindowAction::MoveToOtherMonitor}}) {
+            auto selected = command::evaluate(catalog, "/window Canvas " + verb);
+            check(selected.view.rows.size() == 1 && selected.actions[0]().empty() && switched == third && windowAction == action,
+                "each window verb binds the selected identity and operation");
+            check(selected.view.rows[0].danger == (action == desktop::WindowAction::Close), "only Close requires confirmation");
+            check(!desktop::runWindow({}, action).empty(), "native window actions reject missing targets before operating");
+        }
         check(command::evaluate(catalog, "/window Notes").view.rows.size() == 2 &&
             command::evaluate(catalog, "/window Notes Switch").view.rows.empty(), "ambiguous titles require selecting a window before typing a verb");
         windows = {{desktop::WindowTarget{first.hwnd, 99, 98}, "Replacement", "Code", "code.exe"}};
@@ -290,7 +301,7 @@ int runCommandTests() {
         plain.preview = [](auto&) -> command::Preview { throw std::runtime_error("Must not preview an entrance"); };
         std::vector<command::Command> catalog{plain,
             appCommand({{"Web", "web-app"}, {"Web Browser", "browser-app"}},
-                [&](auto& target) { launched = target; return std::string(); })};
+                [&](auto& target, desktop::AppAction) { launched = target; return std::string(); })};
         auto result = command::evaluate(catalog, "web");
         check(result.view.rows.size() == 3 && result.view.rows[0].kind == "App" &&
             result.view.rows[1].title == "web" && !result.actions[1] &&
@@ -301,13 +312,13 @@ int runCommandTests() {
         check(scoped.view.rows.size() == 1 && scoped.view.rows[0].completion == result.view.rows[1].completion &&
             !scoped.actions[0], "slash restricts discovery to commands using the same completion");
     }
-    std::vector<command::Command> noApps{appCommand({}, [](auto&) { return std::string(); }), echo};
+    std::vector<command::Command> noApps{appCommand({}, [](auto&, desktop::AppAction) { return std::string(); }), echo};
     check(command::evaluate(noApps, "").view.rows.empty() && command::evaluate(noApps, "/").view.rows.size() == 2,
         "an empty app catalog does not fall back to commands");
     auto catalog = query("/app");
     check(catalog.view.rows.size() == 1 && catalog.view.rows[0].completion == "/app " && !catalog.actions[0], "noun completes before entering it");
     auto all = query("/app ");
-    check(all.view.rows.size() == 4 && hint(all.view) == "<App> ", "app noun lists every installed app");
+    check(all.view.rows.size() == 4 && hint(all.view) == "<App> Open ", "app noun lists every installed app");
     auto bare = query("fire");
     check(bare.view.rows.size() == 1 && bare.view.rows[0].actionLabel == "Open", "bare search offers default app action");
     check(bare.actions[0]().empty() && launched == "firefox", "bare action launches the selected target");
@@ -319,7 +330,7 @@ int runCommandTests() {
     check(filled.actions[0]() == "Install Chrome and try again" && launched == "chrome", "launch failure propagates");
     for (const auto& row : all.view.rows) {
         auto resolved = query(row.completion);
-        check(resolved.actions.size() == 1 && (bool)resolved.actions[0], "every app completion resolves unambiguously");
+        check(resolved.actions.size() == 4 && (bool)resolved.actions[0], "every app completion resolves unambiguously");
         resolved.actions[0]();
         check(launched == row.iconKey, "completion preserves exact app identity");
     }
@@ -328,7 +339,7 @@ int runCommandTests() {
         check(typed.view.spans.size() == 3 && typed.view.spans[0].kind == TextSpan::Noun &&
             typed.view.spans[1].kind == TextSpan::Argument && typed.view.spans[2].kind == TextSpan::Verb,
             "noun, args and verb match without rewriting case");
-        check(partial.view.spans.size() == 2 && partial.view.spans[1].kind == TextSpan::Partial && partial.view.slots.empty(),
+        check(partial.view.spans.size() == 2 && partial.view.spans[1].kind == TextSpan::Partial && hint(partial.view) == "Open ",
             "a choice being typed is marked as the slot being filled");
         auto unknown = query("/app Firefox Delete");
         check(unknown.actions.empty() && unknown.view.spans.size() == 3 && unknown.view.spans[2].kind == TextSpan::Error,
@@ -337,7 +348,7 @@ int runCommandTests() {
         check(stray.actions.empty() && stray.view.spans.size() == 2 && stray.view.spans[1].kind == TextSpan::Error,
             "stray text after an unresolved choice cannot execute and marks the bad choice");
         auto filter = query("/app Firefox op");
-        check(filter.actions.size() == 1 && filter.view.spans[2].kind == TextSpan::Partial, "a partial verb filters and is marked as being filled");
+        check(filter.actions.size() == 3 && filter.view.spans[2].kind == TextSpan::Partial, "a partial verb filters and is marked as being filled");
     }
     check(query("/echo ").actions.empty(), "missing argument cannot run");
     check(query("/echo \"hello").actions.empty(), "unclosed text quote cannot run");
@@ -443,7 +454,7 @@ int runCommandTests() {
     check(query(std::string(70, '(') + "1+2" + std::string(70, ')')).view.rows.empty(), "calculator bounds parser recursion");
     check(query(std::string(310, '9') + "+1").view.rows.empty(), "calculator rejects nonfinite values");
     {
-        std::vector<command::Command> overlap{appCommand({{"5 + 5", "math-app"}}, [&](auto& target) { launched = target; return std::string(); }), calc};
+        std::vector<command::Command> overlap{appCommand({{"5 + 5", "math-app"}}, [&](auto& target, desktop::AppAction) { launched = target; return std::string(); }), calc};
         auto result = command::evaluate(overlap, "5 + 5");
         check(result.view.rows.size() == 2 && result.view.rows[0].title == "10" && result.view.rows[1].kind == "App" &&
             result.actions[1]().empty() && launched == "math-app", "recognized results precede apps without removing app matches");
@@ -472,7 +483,7 @@ int runCommandTests() {
         hidden.args[0].loadChoices = []() -> std::vector<command::Choice> { throw std::runtime_error("Must not load"); };
         std::vector<command::Command> catalog{plugin, windows, other, hidden,
             appCommand({{"Quit", "quit-app"}, {"Quitter", "quitter-app"}, {"5 + 5", "math-app"}},
-                [&](auto& target) { launched = target; return std::string(); }), calc};
+                [&](auto& target, desktop::AppAction) { launched = target; return std::string(); }), calc};
         auto originalPreview = catalog[0].preview;
         catalog[0].preview = [&](auto& args) { ++previews; return originalPreview(args); };
         copied.clear(); launched.clear();
@@ -529,22 +540,22 @@ int runCommandTests() {
         const auto pluginsPath = directory / "plugins";
         std::filesystem::path edited, folder;
         std::string hostError;
-        int quits = 0, reloads = 0, checks = 0, restarts = 0;
+        int quits = 0, reloads = 0, checks = 0, restarts = 0, rescans = 0;
         std::vector<command::Command> catalog{relayCommand(configPath, pluginsPath, "1.2.3-test",
             [&](const auto& path) { edited = path; return hostError; },
             [&](const auto& path) { folder = path; return hostError; },
             [&](const auto& value) { copied = value; return hostError; },
             [&] { ++quits; return hostError; }, [&] { ++reloads; return hostError; },
-            [&] { ++checks; return hostError; }, [&] { ++restarts; return hostError; })};
+            [&] { ++checks; return hostError; }, [&] { ++restarts; return hostError; }, [&] { ++rescans; return hostError; })};
         auto noun = command::evaluate(catalog, "/relay");
         check(noun.view.rows.size() == 1 && noun.view.rows[0].completion == "/relay " && !noun.actions[0], "relay noun completes before any native action");
         copied.clear();
         auto actions = command::evaluate(catalog, noun.view.rows[0].completion);
-        check(actions.view.rows.size() == 7 && actions.view.rows[0].title == "Edit Config" &&
+        check(actions.view.rows.size() == 8 && actions.view.rows[0].title == "Edit Config" &&
             actions.view.rows[1].title == "Open Plugins Folder" && actions.view.rows[2].title == "Reload Plugins" &&
             actions.view.rows[3].title == "Copy Version" && actions.view.rows[4].title == "Check for Updates" &&
-            actions.view.rows[5].title == "Restart to Update" && actions.view.rows[6].title == "Quit",
-            "relay exposes seven ordered verbs with config as the default");
+            actions.view.rows[5].title == "Restart to Update" && actions.view.rows[6].title == "Rescan Apps" && actions.view.rows[7].title == "Quit",
+            "relay exposes eight ordered verbs with config as the default");
         check(hint(actions.view) == "Edit Config " && actions.view.slots[0].kind == Slot::Verb, "entering a multi-verb command ghosts its default verb");
         check(actions.view.rows[3].subtitle == "Relay 1.2.3-test" && copied.empty() && quits == 0 && reloads == 0 &&
             checks == 0 && restarts == 0 && edited.empty() && folder.empty() && !std::filesystem::exists(directory), "discovery shows the version without performing actions or creating files");
@@ -574,6 +585,9 @@ int runCommandTests() {
         check(command::evaluate(catalog, "/relay Reload Plugins").actions[0]().empty() && reloads == 1 &&
             command::evaluate(catalog, "reload").actions[0]().empty() && reloads == 2,
             "explicit and bare Reload Plugins dispatch the same native request");
+        check(command::evaluate(catalog, "/relay Rescan Apps").actions[0]().empty() && rescans == 1 &&
+            command::evaluate(catalog, "rescan").actions[0]().empty() && rescans == 2,
+            "explicit and bare Rescan Apps dispatch the same native request");
         check(command::evaluate(catalog, "/relay Quit").actions[0]().empty() && quits == 1, "explicit Quit dispatches the host shutdown request");
         check(command::evaluate(catalog, "/relay Check for Updates").actions[0]().empty() && checks == 1 &&
             command::evaluate(catalog, "/relay Restart to Update").actions[0]().empty() && restarts == 1,
@@ -727,11 +741,113 @@ int runCommandTests() {
     check(!query("/test blue Use").actions[0]().empty(), "Lua exception is a failure");
     std::filesystem::remove(temp / "choice.lua"); std::filesystem::remove(temp / "bad.lua"); std::filesystem::remove(temp / "url.lua"); std::filesystem::remove(temp);
 
+    {
+        std::string target, failure;
+        desktop::AppAction operation{};
+        std::vector<command::Command> catalog{appCommand({{"Editor", "first"}, {"Editor", "second"}},
+            [&](const auto& app, desktop::AppAction action) { target = app; operation = action; return failure; })};
+        const auto choices = command::evaluate(catalog, "/app ");
+        const std::vector<desktop::AppAction> expected{desktop::AppAction::Open, desktop::AppAction::Admin,
+            desktop::AppAction::FileLocation, desktop::AppAction::CopyPath};
+        for (const auto& row : choices.view.rows) {
+            auto verbs = command::evaluate(catalog, row.completion);
+            check(verbs.actions.size() == expected.size(), "app completion exposes all four verbs");
+            for (size_t i = 0; i < verbs.actions.size(); ++i) {
+                check(verbs.actions[i]().empty() && target == row.iconKey && operation == expected[i],
+                    "all app verbs preserve duplicate app identities and dispatch distinct operations");
+                failure = "Unavailable; try Open instead";
+                check(verbs.actions[i]() == failure, "app operation failures retain their recovery message");
+                failure.clear();
+            }
+        }
+    }
+    {
+        Signal scanSignal;
+        Engine scanEngine;
+        std::thread::id worker;
+        bool failScan = false, pauseScan = false;
+        int pluginLoads = 0, scans = 0;
+        std::vector<desktop::AppEntry> entries{{"Old App", "old"}};
+        std::promise<void> scanStarted, releaseScan;
+        auto gate = releaseScan.get_future();
+        auto fakeApp = [&](auto entries) {
+            return appCommand(std::move(entries), [&](const auto& target, desktop::AppAction) {
+                launched = target; return std::string{};
+            });
+        };
+        scanEngine.start([&](auto reload, auto rescan) {
+            worker = std::this_thread::get_id();
+            return std::vector<command::Command>{fakeApp(entries),
+                relayCommand(temp / "unused.lua", temp, "test", [](auto&) { return std::string{}; },
+                    [](auto&) { return std::string{}; }, copy, [] { return std::string{}; }, reload,
+                    [] { return std::string{}; }, [] { return std::string{}; }, rescan)};
+        }, [&](auto& commands) {
+            ++pluginLoads;
+            command::Command plugin{"probe", "Test plugin state"};
+            plugin.verbs.push_back({"Run", false, [count = 0](auto&) mutable { ++count; return std::to_string(count); }});
+            commands.push_back(std::move(plugin));
+        }, [&] { scanSignal.notify(); }, [&] {
+            check(std::this_thread::get_id() == worker, "app enumeration runs on the engine worker");
+            ++scans;
+            if (pauseScan) { scanStarted.set_value(); gate.wait(); }
+            if (failScan) throw std::runtime_error("Scan failed");
+            return fakeApp(entries);
+        });
+        auto ask = [&](std::string input) {
+            const auto generation = scanEngine.submit(std::move(input));
+            scanSignal.wait();
+            auto result = scanEngine.takeResult();
+            check(result && result->generation == generation, "rescan queries retain their generation");
+            return result.value();
+        };
+        auto run = [&](const Engine::Result& result) {
+            check(scanEngine.execute(result.generation, 0, true), "rescan dispatch accepted");
+            scanSignal.wait();
+            auto done = scanEngine.takeCompletion();
+            check(done && done->generation == result.generation, "rescan dispatch completes with its generation");
+            return done->error;
+        };
+        check(ask("").view.rows[0].title == "Old App" && scans == 0, "ordinary queries do not rescan apps");
+        check(run(ask("/probe ")) == "1", "plugin state starts once");
+        entries = {{"New App", "new"}};
+        failScan = true;
+        const auto failed = ask("/relay Rescan Apps");
+        check(!run(failed).empty(), "scan failure reports an action error");
+        failScan = false;
+        check(run(failed).empty() && ask("").view.rows[0].title == "New App" && pluginLoads == 1,
+            "retrying a failed scan replaces apps without reloading plugins");
+        check(run(ask("/probe ")) == "2", "rescan preserves plugin state");
+        failScan = true;
+        check(!run(ask("rescan")).empty() && ask("").view.rows[0].title == "New App",
+            "failed rescan retains the last working catalog");
+        failScan = false;
+        check(run(ask("/relay Reload Plugins")).empty() && ask("").view.rows[0].title == "New App",
+            "plugin reload retains the rescanned native app catalog");
+        entries.clear();
+        check(run(ask("rescan")).empty() && ask("").view.rows.empty(), "a successful empty scan removes uninstalled apps");
+        entries = {{"Latest App", "latest"}};
+        pauseScan = true;
+        const auto scanning = ask("rescan");
+        check(scanEngine.execute(scanning.generation, 0, true), "slow scan accepted");
+        scanStarted.get_future().wait();
+        scanEngine.submit("Old App");
+        scanEngine.cancel();
+        const auto reopened = scanEngine.submit("");
+        releaseScan.set_value();
+        scanSignal.wait(); scanSignal.wait();
+        auto done = scanEngine.takeCompletion();
+        auto latest = scanEngine.takeResult();
+        check(done && done->generation == scanning.generation && done->error.empty() && latest &&
+            latest->generation == reopened && latest->view.rows[0].title == "Latest App",
+            "late rescan completion cannot replace a new session; its query uses the refreshed apps");
+        check(!scanEngine.execute(scanning.generation, 0, true), "stale scan results cannot execute again");
+        scanEngine.stop();
+    }
     Signal signal;
     Engine engine;
     std::promise<void> loaded, releaseLoad, running, releaseRun;
     auto loadGate = releaseLoad.get_future(); auto runGate = releaseRun.get_future();
-    engine.start([&](auto) {
+    engine.start([&](auto, auto) {
         loaded.set_value(); loadGate.wait();
         command::Command cmd{"test", "Test execution"};
         cmd.verbs.push_back({"Run", false, [&](auto&) { running.set_value(); runGate.wait(); return std::string("Failed; retry"); }});
@@ -765,7 +881,7 @@ int runCommandTests() {
     auto publishGate = releasePublish.get_future();
     int calls = 0;
     bool firstWake = true;
-    cancelledEngine.start([&](auto) {
+    cancelledEngine.start([&](auto, auto) {
         command::Command cmd{"test", "Test confirmation"};
         cmd.search = true;
         cmd.verbs.push_back({"Remove", true, [&](auto&) { ++calls; return std::string(); }});
@@ -818,14 +934,14 @@ int runCommandTests() {
             ~Lifetime() { destroyed->emplace_back(load, std::this_thread::get_id()); }
         };
         Engine reloadEngine;
-        reloadEngine.start([&](auto reload) {
+        reloadEngine.start([&](auto reload, auto rescan) {
             worker = std::this_thread::get_id();
             ++nativeLoads;
             return std::vector<command::Command>{
-                appCommand({{"Test App", "fake-target"}}, [](auto&) { return std::string{}; }),
+                appCommand({{"Test App", "fake-target"}}, [](auto&, desktop::AppAction) { return std::string{}; }),
                 relayCommand(temp / "unused.lua", user, "test", [](auto&) { return std::string{}; },
                     [](auto&) { return std::string{}; }, copy, [] { return std::string{}; }, std::move(reload),
-                    [] { return std::string{}; }, [] { return std::string{}; })};
+                    [] { return std::string{}; }, [] { return std::string{}; }, std::move(rescan))};
         }, [&](auto& catalog) {
             ++pluginLoads;
             if (pauseReload) { reloadStarted.set_value(); reloadGate.wait(); }

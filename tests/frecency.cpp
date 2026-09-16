@@ -40,7 +40,7 @@ int runFrecencyTests() {
     const auto appPath = directory / "apps.tsv";
     auto appHistory = std::make_shared<Frecency>(appPath);
     std::string launched, failure, notice;
-    auto launch = [&](const std::string& target) { launched = target; return failure; };
+    auto launch = [&](const std::string& target, desktop::AppAction) { launched = target; return failure; };
     std::vector<command::Command> apps{appCommand({{"Fire", "short-target"}, {"Firefox", "browser-target"}, {"Other", "other-target"}},
         launch, appHistory, [&](std::string error) { notice = std::move(error); })};
     auto query = [&](const std::string& text) { return command::evaluate(apps, text); };
@@ -59,6 +59,12 @@ int runFrecencyTests() {
     check(home.view.rows[0].title == "Firefox" && home.view.rows[1].title == "Fire" && home.view.rows[2].title == "Other",
         "empty input puts used apps first and keeps unused apps alphabetical");
     check(query("/app ").view.rows[0].title == "Fire", "explicit app catalog stays alphabetical despite history");
+    const int beforeFileActions = appHistory->score("browser-target");
+    for (const auto* verb : {"Copy Path", "Open File Location"})
+        check(query(std::string("/app Firefox ") + verb).actions[0]().empty() && launched == "browser-target" &&
+            appHistory->score("browser-target") == beforeFileActions, "file actions retain app identity without counting as launches");
+    check(query("/app Firefox Run as Administrator").actions[0]().empty() &&
+        appHistory->score("browser-target") == beforeFileActions + 40, "successful administrator launches count toward history");
     check(home.actions[0]().empty() && launched == "browser-target" &&
         query(home.view.rows[0].completion).actions[0]().empty() && launched == "browser-target",
         "empty-input activation and completion bind the displayed app");

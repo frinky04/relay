@@ -17,7 +17,8 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     std::function<std::string()> quit,
     std::function<std::string()> reloadPlugins,
     std::function<std::string()> checkUpdates,
-    std::function<std::string()> restartToUpdate) {
+    std::function<std::string()> restartToUpdate,
+    std::function<std::string()> rescanApps) {
     command::Command cmd{"relay", "Configure and manage Relay"};
     cmd.search = true;
     cmd.verbs.push_back({"Edit Config", false, [config = std::move(config), edit = std::move(edit)](auto&) {
@@ -45,6 +46,9 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     cmd.verbs.push_back({"Restart to Update", false, [restartToUpdate = std::move(restartToUpdate)](auto&) {
         return restartToUpdate();
     }, "Apply the downloaded update and restart Relay"});
+    cmd.verbs.push_back({"Rescan Apps", false, [rescanApps = std::move(rescanApps)](auto&) {
+        return rescanApps();
+    }, "Refresh installed apps while keeping launch history"});
     cmd.verbs.push_back({"Quit", false, [quit = std::move(quit)](auto&) {
         return quit();
     }, "Exit Relay; launch it again to use the hotkey"});

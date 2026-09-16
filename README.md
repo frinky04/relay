@@ -8,7 +8,7 @@ The apps you use often and have opened recently rise to the top. Type `/app ` fo
 
 Download **Setup.exe** from [Releases](https://github.com/frinky04/relay/releases/latest) and run it. Relay installs for your Windows account. For portable use, extract the **Portable.zip** and run `Relay.exe` in its top folder; keep the files together.
 
-Restart Relay after installing or removing apps to refresh its app list.
+Run `/relay Rescan Apps` after installing or removing apps to refresh its app list.
 
 ## Commands
 
@@ -22,6 +22,8 @@ Restart Relay after installing or removing apps to refresh its app list.
 | `/relay ` | Open settings, manage plugins, update or quit Relay |
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use its default action. **Tab** fills names and adds quotes where needed; the hints show what comes next.
+
+After completing an app name with Tab, choose Open, Run as Administrator, Open File Location or Copy Path. Window actions include Switch, Close, Minimize, Maximize and Move to Other Monitor. Close requires two Enter presses and lets the app prompt to save.
 
 Check for Updates keeps your input and selection in place and shows progress and the result on its action row.
 

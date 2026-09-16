@@ -10,4 +10,5 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     std::function<std::string()> quit,
     std::function<std::string()> reloadPlugins,
     std::function<std::string()> checkUpdates,
-    std::function<std::string()> restartToUpdate);
+    std::function<std::string()> restartToUpdate,
+    std::function<std::string()> rescanApps);
