@@ -26,7 +26,8 @@ function Pack-Relay([string]$PackageVersion, [string]$Destination) {
     # Do not execute the GUI as part of packaging; the SDK is exercised below.
     & $vpk pack --packId frinky04.Relay --packVersion $PackageVersion --packDir $app `
         --mainExe relay.exe --packTitle Relay --packAuthors Frinky --runtime win-x64 `
-        --shortcuts StartMenuRoot --delta None --skipVeloAppCheck --outputDir $Destination
+        --icon "$app/assets/relay.ico" --shortcuts StartMenuRoot --delta None --skipVeloAppCheck `
+        --outputDir $Destination
     if ($LASTEXITCODE -ne 0) { throw "Packaging $PackageVersion failed" }
 }
 Pack-Relay $version $release

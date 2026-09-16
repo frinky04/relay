@@ -38,7 +38,7 @@ with zipfile.ZipFile(directory / "frinky04.Relay-win-Portable.zip") as archive:
         ".portable", "relay.exe", "update.exe", "current/relay.exe", "current/sq.version",
         "current/version.txt", "current/license", "current/third_party_notices.md",
         "current/velopack_libc.dll", "current/vcruntime140.dll", "current/msvcp140.dll",
-        "current/assets/notosansmono-medium.ttf", "current/assets/ofl.txt",
+        "current/assets/notosansmono-medium.ttf", "current/assets/ofl.txt", "current/assets/relay.ico",
         "current/plugins/calc.lua", "current/plugins/web.lua",
         "current/licenses/imgui.txt", "current/licenses/lua.txt", "current/licenses/sol2.txt",
         "current/licenses/velopack.txt",

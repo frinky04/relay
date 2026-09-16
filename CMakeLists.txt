@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(relay VERSION 0.2.2 LANGUAGES CXX)
+project(relay VERSION 0.2.2 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,6 +38,7 @@ add_executable(relay WIN32
   src/app.cpp
   src/theme.cpp
   src/icons.cpp
+  src/relay.rc
 )
 
 target_include_directories(relay PRIVATE src ${LUA_INCLUDE_DIR})

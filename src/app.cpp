@@ -117,6 +117,8 @@ bool App::init(HINSTANCE inst) {
     wc.hInstance = inst;
     wc.lpszClassName = CLASS_NAME;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
+    wc.hIconSm = wc.hIcon;
     RegisterClassExW(&wc);
 
     m_hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP,

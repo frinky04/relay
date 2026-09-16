@@ -1,0 +1,2 @@
+// Application icon: Explorer, the taskbar and Alt+Tab read the first ICON resource.
+1 ICON "../assets/relay.ico"
