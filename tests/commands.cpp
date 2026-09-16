@@ -284,7 +284,10 @@ int runCommandTests() {
         for (size_t i = 0; i < rows.view.rows.size(); ++i) {
             auto completed = command::evaluate(catalog, rows.view.rows[i].completion);
             check(completed.view.rows.size() == 5 && completed.view.rows[0].actionLabel == "Switch" &&
-                completed.view.rows[0].completion.empty(), "Tab completion offers window verbs with Switch first");
+                completed.view.rows[1].actionLabel == "Minimize" && completed.view.rows[2].actionLabel == "Maximize" &&
+                completed.view.rows[3].actionLabel == "Move to Other Monitor" &&
+                completed.view.rows[4].actionLabel == "Close" && completed.view.rows[4].danger &&
+                completed.view.rows[0].completion.empty(), "window verbs put Switch first, layout actions together and Close last");
             check(completed.actions[0]().empty(), "completed window reference executes");
             const auto selected = switched;
             check(rows.actions[i]().empty() && switched == selected, "fresh enumeration and old snapshots preserve exact target identity across reorder");
@@ -837,8 +840,8 @@ int runCommandTests() {
         std::vector<command::Command> catalog{appCommand({{"Editor", "first"}, {"Editor", "second"}},
             [&](const auto& app, desktop::AppAction action) { target = app; operation = action; return failure; })};
         const auto choices = command::evaluate(catalog, "/app ");
-        const std::vector<desktop::AppAction> expected{desktop::AppAction::Open, desktop::AppAction::Admin,
-            desktop::AppAction::FileLocation, desktop::AppAction::CopyPath};
+        const std::vector<desktop::AppAction> expected{desktop::AppAction::Open, desktop::AppAction::FileLocation,
+            desktop::AppAction::CopyPath, desktop::AppAction::Admin};
         for (const auto& row : choices.view.rows) {
             auto verbs = command::evaluate(catalog, row.completion);
             check(verbs.actions.size() == expected.size(), "app completion exposes all four verbs");

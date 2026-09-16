@@ -32,7 +32,7 @@ std::optional<desktop::WindowTarget> target(const std::string& value) {
 
 command::Command windowCommand(std::function<std::vector<desktop::WindowEntry>()> list,
     std::function<std::string(const desktop::WindowTarget&, desktop::WindowAction)> run) {
-    command::Command cmd{"window", "Switch to and manage an open window"};
+    command::Command cmd{"window", "Manage open windows"};
     cmd.search = true;
     command::Argument arg; arg.name = "Window";
     arg.loadChoices = [list = std::move(list)] {
@@ -65,10 +65,10 @@ command::Command windowCommand(std::function<std::vector<desktop::WindowEntry>()
             return run(*window, action);
         };
     };
-    cmd.verbs.push_back({"Switch", false, bind(desktop::WindowAction::Switch), "Restore and focus the window"});
-    cmd.verbs.push_back({"Close", true, bind(desktop::WindowAction::Close), "Ask the window to close; the app may prompt to save"});
-    cmd.verbs.push_back({"Minimize", false, bind(desktop::WindowAction::Minimize), "Minimize the window"});
-    cmd.verbs.push_back({"Maximize", false, bind(desktop::WindowAction::Maximize), "Maximize the window"});
-    cmd.verbs.push_back({"Move to Other Monitor", false, bind(desktop::WindowAction::MoveToOtherMonitor), "Move the window to the next connected display"});
+    cmd.verbs.push_back({"Switch", false, bind(desktop::WindowAction::Switch), "Restore if minimized"});
+    cmd.verbs.push_back({"Minimize", false, bind(desktop::WindowAction::Minimize), "Keep open in the taskbar"});
+    cmd.verbs.push_back({"Maximize", false, bind(desktop::WindowAction::Maximize), "Fill available screen space"});
+    cmd.verbs.push_back({"Move to Other Monitor", false, bind(desktop::WindowAction::MoveToOtherMonitor), "Next connected display"});
+    cmd.verbs.push_back({"Close", true, bind(desktop::WindowAction::Close), "App may ask to save"});
     return cmd;
 }

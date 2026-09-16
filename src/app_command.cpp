@@ -21,7 +21,7 @@ command::Command appCommand(std::vector<desktop::AppEntry> apps,
         choices.push_back({name, {}, app.parsing});
     }
     std::sort(choices.begin(), choices.end(), [](auto& a, auto& b) { return fuzzy::lower(a.text) < fuzzy::lower(b.text); });
-    command::Command cmd{"app", "Open and manage an installed app"};
+    command::Command cmd{"app", "Launch and manage apps"};
     cmd.search = true;
     if (history) cmd.choiceFrecency = [history](const command::Choice& choice) { return history->score(choice.iconKey); };
     cmd.args.push_back({"App", std::move(choices)});
@@ -39,9 +39,9 @@ command::Command appCommand(std::vector<desktop::AppEntry> apps,
             return error;
         };
     };
-    cmd.verbs.push_back({"Open", false, bind(desktop::AppAction::Open), "Open the app"});
-    cmd.verbs.push_back({"Run as Administrator", false, bind(desktop::AppAction::Admin), "Open the app with administrator permissions"});
-    cmd.verbs.push_back({"Open File Location", false, bind(desktop::AppAction::FileLocation), "Select the app's file in Explorer"});
-    cmd.verbs.push_back({"Copy Path", false, bind(desktop::AppAction::CopyPath), "Copy the app's file path"});
+    cmd.verbs.push_back({"Open", false, bind(desktop::AppAction::Open), "Use saved launch options"});
+    cmd.verbs.push_back({"Open File Location", false, bind(desktop::AppAction::FileLocation), "Select the file in Explorer"});
+    cmd.verbs.push_back({"Copy Path", false, bind(desktop::AppAction::CopyPath), "Full path without quotes"});
+    cmd.verbs.push_back({"Run as Administrator", false, bind(desktop::AppAction::Admin), "Windows may ask for approval"});
     return cmd;
 }

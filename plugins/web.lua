@@ -8,6 +8,7 @@ end
 local function search(engine, url)
   return {
     name = "Search " .. engine,
+    help = "Default browser",
     run = function(args)
       if not args[1]:find("%S") then
         return "Enter search terms and try again"
@@ -19,7 +20,7 @@ end
 
 return {
   name = "web",
-  help = "Search the web in your browser",
+  help = "Search the web",
   args = {
     { name = "Query", rest = true },
   },

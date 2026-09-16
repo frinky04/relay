@@ -778,7 +778,7 @@ end
 return {
     name = "datetime",
     recognize_priority = 1, -- An ISO date wins over the calculator's subtraction interpretation.
-    help = "Calculate dates and times; use /datetime for copy formats",
+    help = "Calculate dates and times",
     args = { { name = "Expression", rest = true, default = "now" } },
     recognize = function(text, context)
         if text:find("%S") and query(text, context.now) then return { text } end

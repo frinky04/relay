@@ -31,15 +31,14 @@ void Updates::start(UpdateBackend backend, Report report) {
                     backend.restart();
                     return;
                 }
-                if (!automatic) report("Checking for updates...", "Any available update will download in the background");
+                if (!automatic) report("Checking for updates...", "Available updates download automatically");
                 const auto version = backend.download(stop);
                 ready = !version.empty();
                 if (ready) {
                     title = "Update ready";
-                    body = "Relay " + version + " is ready; run /relay Restart to Update or restart Relay later";
+                    body = "Relay " + version + "; run /relay Restart to Update";
                 } else if (!automatic) {
                     title = "Relay is up to date";
-                    body = "No newer release is available";
                 }
             } catch (const std::exception&) {
                 title = "Update failed";

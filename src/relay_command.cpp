@@ -19,7 +19,7 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     std::function<std::string()> checkUpdates,
     std::function<std::string()> restartToUpdate,
     std::function<std::string()> rescanApps) {
-    command::Command cmd{"relay", "Configure and manage Relay"};
+    command::Command cmd{"relay", "Relay settings and maintenance"};
     cmd.search = true;
     cmd.verbs.push_back({"Edit Config", false, [config = std::move(config), edit = std::move(edit)](auto&) {
         const auto referenceError = Config::refreshReference(config);

@@ -40,6 +40,6 @@ command::Command processCommand(std::function<std::vector<desktop::ProcessEntry>
         const auto process = target(args.at(0));
         if (!process) return std::string("Process unavailable; edit the query to refresh processes");
         return kill(*process);
-    }, "Force the process to exit; unsaved work will be lost"});
+    }, "Unsaved work will be lost"});
     return cmd;
 }
