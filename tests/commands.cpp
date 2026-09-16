@@ -5,6 +5,7 @@
 #include "config.h"
 #include "window_command.h"
 #include "process_command.h"
+#include "system_command.h"
 #include "engine.h"
 #include "lua_commands.h"
 #include <cstdio>
@@ -44,6 +45,85 @@ struct Signal {
 };
 
 int runCommandTests() {
+    {
+        using Action = desktop::SystemAction;
+        bool hibernate = true;
+        int calls = 0, capabilityChecks = 0;
+        std::optional<Action> selected;
+        std::string error;
+        std::vector<command::Command> catalog{systemCommand([&](Action action) {
+            ++calls;
+            selected = action;
+            return error;
+        }, [&] { ++capabilityChecks; return hibernate; })};
+        check(command::validate(catalog[0]).empty(), "system uses existing argument-free verb contracts");
+        auto noun = command::evaluate(catalog, "/system");
+        check(noun.view.rows.size() == 1 && noun.view.rows[0].completion == "/system " && !noun.actions[0],
+            "system noun only completes and cannot lock the session");
+        command::evaluate(catalog, ""); command::evaluate(catalog, "/");
+        check(calls == 0 && capabilityChecks == 0, "system discovery has no power queries or desktop effects");
+        auto rows = command::evaluate(catalog, "/system ");
+        const char* names[] = {"Lock", "Sleep", "Hibernate", "Sign Out", "Restart", "Shutdown"};
+        const Action actions[] = {Action::Lock, Action::Sleep, Action::Hibernate, Action::SignOut, Action::Restart, Action::Shutdown};
+        check(rows.view.rows.size() == 6 && calls == 0 && capabilityChecks == 1,
+            "system offers six ordered actions with Lock first and queries Hibernate only once");
+        for (size_t i = 0; i < rows.view.rows.size(); ++i) {
+            check(rows.view.rows[i].title == names[i] && rows.view.rows[i].actionLabel == names[i] &&
+                rows.view.rows[i].danger == (i >= 3) && rows.view.rows[i].completion.empty() &&
+                !rows.view.rows[i].preserveInput, "system actions preserve help, danger and normal completion behavior");
+            check(rows.actions[i] && rows.actions[i]().empty() && selected == actions[i],
+                "each displayed system row binds its own fake operation");
+            auto explicitVerb = command::evaluate(catalog, std::string("/system ") + names[i]);
+            check(explicitVerb.view.rows.size() == 1 && explicitVerb.actions[0]().empty() && selected == actions[i],
+                "explicit system verbs including Sign Out dispatch their bound operation");
+            auto search = command::evaluate(catalog, names[i]);
+            check(!search.view.rows.empty() && search.view.rows[0].title == names[i] &&
+                search.view.rows[0].context == "/system" && search.view.rows[0].danger == (i >= 3) &&
+                search.actions[0]().empty() && selected == actions[i],
+                "bare system action search retains context, binding and destructive confirmation");
+        }
+        auto lowercase = command::evaluate(catalog, "/SYSTEM sign out");
+        check(lowercase.view.rows.size() == 1 && lowercase.actions[0]().empty() && selected == Action::SignOut,
+            "system noun and multiword verbs match without case sensitivity");
+        hibernate = false;
+        auto unavailable = command::evaluate(catalog, "/system ");
+        check(unavailable.view.rows.size() == 5 && unavailable.view.rows[2].title == "Sign Out" &&
+            command::evaluate(catalog, "/system Hibernate").view.rows.empty() &&
+            command::evaluate(catalog, "Hibernate").view.rows.empty(),
+            "unavailable Hibernate is omitted from scoped actions and bare search");
+        check(unavailable.actions[2]().empty() && selected == Action::SignOut,
+            "hiding Hibernate does not shift operation bindings");
+        hibernate = true;
+        check(command::evaluate(catalog, "/system Hibernate").view.rows.size() == 1,
+            "Hibernate availability refreshes on the next query without restarting Relay");
+        error = "Windows denied the power request; try the Windows Start menu";
+        check(rows.actions[4]() == error, "system errors propagate unchanged for retry on the selected row");
+
+        Signal signal;
+        Engine engine;
+        engine.start([catalog](auto, auto) { return catalog; }, {}, [&] { signal.notify(); });
+        for (auto name : {"Sign Out", "Restart", "Shutdown"}) {
+            const auto generation = engine.submit(std::string("/system ") + name);
+            signal.wait();
+            auto result = engine.takeResult();
+            const int before = calls;
+            check(result && result->generation == generation && result->view.rows.size() == 1 &&
+                result->view.rows[0].danger, "worker publishes system actions with destructive metadata");
+            check(engine.execute(generation, 0, false), "unconfirmed system dispatch reaches worker validation");
+            signal.wait();
+            auto completion = engine.takeCompletion();
+            check(completion && !completion->error.empty() && calls == before,
+                "worker rejects unconfirmed sign out, restart and shutdown without desktop effects");
+            check(engine.execute(generation, 0, true), "confirmed system action dispatches");
+            signal.wait();
+            completion = engine.takeCompletion();
+            check(completion && completion->generation == generation && completion->error == error && calls == before + 1,
+                "confirmed system action executes once and returns its failure for retry");
+            engine.cancel();
+            check(!engine.execute(generation, 0, true), "hiding prevents old system actions from executing");
+        }
+        engine.stop();
+    }
     {
         std::string selected;
         command::Command cmd{"sample", "Test choice ranking"};

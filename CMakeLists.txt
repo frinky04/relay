@@ -23,6 +23,7 @@ add_library(relay_core STATIC
   src/relay_command.cpp
   src/window_command.cpp
   src/process_command.cpp
+  src/system_command.cpp
   src/lua_commands.cpp
   src/desktop.cpp
   src/updates.cpp
@@ -30,7 +31,7 @@ add_library(relay_core STATIC
 )
 target_include_directories(relay_core PUBLIC src ${LUA_INCLUDE_DIR})
 target_link_libraries(relay_core PUBLIC ${LUA_LIBRARIES} sol2::sol2 velopack_sdk
-  shell32 ole32 user32 urlmon shlwapi propsys shcore gdi32 uuid dwmapi winhttp)
+  shell32 ole32 user32 urlmon shlwapi propsys shcore gdi32 uuid dwmapi winhttp powrprof advapi32)
 target_compile_definitions(relay_core PUBLIC UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN SOL_ALL_SAFETIES_ON=1)
 
 add_executable(relay WIN32

@@ -19,10 +19,13 @@ Type `/` to list commands. Use **Up/Down** to select a result and **Tab** to com
 | `5 + 5` | Calculate; Enter copies the result |
 | `tomorrow at 7pm` | Preview a date and time; Enter copies it |
 | `/process paint` | Find a running process to stop |
+| `/system ` | Lock, sleep, hibernate, sign out, restart or shut down Windows |
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use the default action.
 
 **Kill requires two Enter presses and discards unsaved work.**
+
+`/system` defaults to Lock. Hibernate appears when available. Sign Out, Restart and Shutdown require two Enter presses; save your work first. You can also find these actions by typing their names without `/system`.
 
 ## Settings and plugins
 

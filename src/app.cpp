@@ -6,6 +6,7 @@
 #include "relay_command.h"
 #include "window_command.h"
 #include "process_command.h"
+#include "system_command.h"
 #include "lua_commands.h"
 #include "menu_layout.h"
 
@@ -201,6 +202,7 @@ bool App::init(HINSTANCE inst) {
         }
         commands.push_back(windowCommand(desktop::listWindows, desktop::runWindow));
         commands.push_back(processCommand(desktop::listProcesses, desktop::killProcess));
+        commands.push_back(systemCommand(desktop::runSystem, desktop::canHibernate));
         commands.push_back(relayCommand(Config::path(), fs::path(dataDir()) / L"plugins", RELAY_VERSION,
             desktop::editTextFile, desktop::openFolder, copy, [hwnd]() -> std::string {
                 if (PostMessageW(hwnd, WM_APP_QUIT, 0, 0)) return {};

@@ -13,6 +13,8 @@
 #include <stdexcept>
 #include <tlhelp32.h>
 #include <unordered_map>
+#include <powrprof.h>
+#include <reason.h>
 
 using Microsoft::WRL::ComPtr;
 
@@ -22,6 +24,26 @@ namespace {
 struct Handle {
     HANDLE value;
     ~Handle() { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
+};
+
+struct ShutdownPrivilege {
+    Handle token{};
+    TOKEN_PRIVILEGES previous{};
+    bool enable() {
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token.value))
+            return false;
+        TOKEN_PRIVILEGES requested{};
+        requested.PrivilegeCount = 1;
+        requested.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+        if (!LookupPrivilegeValueW(nullptr, SE_SHUTDOWN_NAME, &requested.Privileges[0].Luid)) return false;
+        DWORD size = sizeof(previous);
+        return AdjustTokenPrivileges(token.value, FALSE, &requested, sizeof(previous), &previous, &size) &&
+            GetLastError() == ERROR_SUCCESS;
+    }
+    ~ShutdownPrivilege() {
+        if (previous.PrivilegeCount)
+            AdjustTokenPrivileges(token.value, FALSE, &previous, 0, nullptr, nullptr);
+    }
 };
 
 uint64_t processCreated(HANDLE process) {
@@ -47,6 +69,39 @@ DWORD shellOpen(const std::string& target, const wchar_t* parameters = nullptr, 
     sei.nShow = SW_SHOWNORMAL;
     return ShellExecuteExW(&sei) ? ERROR_SUCCESS : GetLastError();
 }
+}
+
+bool canHibernate() {
+    SYSTEM_POWER_CAPABILITIES capabilities{};
+    return GetPwrCapabilities(&capabilities) && capabilities.SystemS4 && capabilities.HiberFilePresent &&
+        capabilities.HiberFileType == HIBERFILE_TYPE_FULL;
+}
+
+std::string runSystem(SystemAction action) {
+    if (action == SystemAction::Lock)
+        return LockWorkStation() ? "" : "Cannot lock Windows; try Win+L";
+    if (action == SystemAction::SignOut)
+        return ExitWindowsEx(EWX_LOGOFF, 0) ? "" : "Cannot sign out; save your work and try the Windows Start menu";
+    if (action == SystemAction::Hibernate && !canHibernate())
+        return "Hibernate is unavailable; enable hibernation in Windows or choose Sleep";
+
+    ShutdownPrivilege privilege;
+    if (!privilege.enable())
+        return "Windows denied the power request; try the Windows Start menu or contact your administrator";
+    switch (action) {
+    case SystemAction::Sleep:
+        return SetSuspendState(FALSE, FALSE, FALSE) ? "" : "Cannot sleep; check Windows power settings and try again";
+    case SystemAction::Hibernate:
+        return SetSuspendState(TRUE, FALSE, FALSE) ? "" : "Cannot hibernate; check Windows power settings and try again";
+    case SystemAction::Restart:
+    case SystemAction::Shutdown:
+        // Let applications block the request for unsaved work; never force termination.
+        return ExitWindowsEx(action == SystemAction::Restart ? EWX_REBOOT : EWX_POWEROFF,
+            SHTDN_REASON_MAJOR_OTHER | SHTDN_REASON_MINOR_OTHER | SHTDN_REASON_FLAG_PLANNED)
+            ? "" : "Cannot shut down or restart; save your work and try the Windows Start menu";
+    default:
+        return "Unknown system action; select a current /system action and try again";
+    }
 }
 
 std::string writeStartupShortcut(const std::filesystem::path& shortcut,

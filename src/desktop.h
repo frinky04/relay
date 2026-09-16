@@ -55,6 +55,9 @@ enum class WindowAction { Switch, Close, Minimize, Maximize, MoveToOtherMonitor 
 std::string runWindow(const WindowTarget& target, WindowAction action);
 std::vector<ProcessEntry> listProcesses();
 std::string killProcess(const ProcessTarget& target);
+enum class SystemAction { Lock, Sleep, Hibernate, SignOut, Restart, Shutdown };
+bool canHibernate();
+std::string runSystem(SystemAction action);
 void typeInto(const std::string& text);
 
 } // namespace desktop
