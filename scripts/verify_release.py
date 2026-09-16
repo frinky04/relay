@@ -39,11 +39,12 @@ with zipfile.ZipFile(directory / "frinky04.Relay-win-Portable.zip") as archive:
         "current/version.txt", "current/license", "current/third_party_notices.md",
         "current/velopack_libc.dll", "current/vcruntime140.dll", "current/msvcp140.dll",
         "current/assets/notosansmono-medium.ttf", "current/assets/ofl.txt", "current/assets/relay.ico",
-        "current/plugins/calc.lua", "current/plugins/web.lua",
+        "current/plugins/web.lua",
         "current/licenses/imgui.txt", "current/licenses/lua.txt", "current/licenses/sol2.txt",
         "current/licenses/velopack.txt",
     }
     assert expected <= names.keys(), f"Missing portable files: {expected - names.keys()}"
+    assert not {"current/plugins/calc.lua", "current/plugins/datetime.lua"}.intersection(names), "Obsolete calculator plugins in release"
     for name in names:
         parts = pathlib.PurePosixPath(name).parts
         assert not {"docs", "tests", ".git", ".."}.intersection(parts), "Private/development file in release"

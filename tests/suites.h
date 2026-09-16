@@ -1,4 +1,5 @@
 #pragma once
+int runCalculatorTests();
 int runUpdateTests();
 int runUpdateHttpTest(const char* directory);
 int runUpdateFeedTest(const char* portableRoot, const char* releaseFeed);

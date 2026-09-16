@@ -17,11 +17,16 @@ Type `/` to list commands. Use **Up/Down** to select a result and **Tab** to com
 | `/window code` | Find and switch to an open window |
 | `/web lua documentation` | Search the web |
 | `5 + 5` | Calculate; Enter copies the result |
+| `10 ft in cm` | Convert units; compatible quantities support arithmetic |
 | `tomorrow at 7pm` | Preview a date and time; Enter copies it |
+| `days until 25 Dec` | Count calendar days |
+| `5pm London in Sydney` | Convert timezones using daylight-saving rules |
 | `/process paint` | Find a running process to stop |
 | `/system ` | Lock, sleep, hibernate, sign out, restart or shut down Windows |
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use the default action.
+
+`/calc <expression>` handles numbers, units, dates and times. Use `/calc now` for the current time and alternate copy formats. Select formats from the results; the expression consumes the remaining input.
 
 **Kill requires two Enter presses and discards unsaved work.**
 
@@ -31,7 +36,7 @@ Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave of
 
 Run `/relay Edit Config` to open settings. The file includes examples; save your changes to apply them.
 
-To add Lua commands, run `/relay Open Plugins Folder` and place your files there. Run `/relay Reload Plugins` after editing them. See the [bundled commands](plugins) for examples.
+To add Lua commands, run `/relay Open Plugins Folder` and place your files there. Run `/relay Reload Plugins` after editing them. See the [bundled web command](plugins/web.lua) for examples.
 
 ## License
 

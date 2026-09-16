@@ -1,3 +1,4 @@
+#include "calculator_command.h"
 #include "app.h"
 #include "theme.h"
 #include "icons.h"
@@ -200,6 +201,7 @@ bool App::init(HINSTANCE inst) {
             report(e.what());
             commands.push_back(appCommand({}, runApp, history, report));
         }
+        commands.push_back(calculatorCommand(copy));
         commands.push_back(windowCommand(desktop::listWindows, desktop::runWindow));
         commands.push_back(processCommand(desktop::listProcesses, desktop::killProcess));
         commands.push_back(systemCommand(desktop::runSystem, desktop::canHibernate));

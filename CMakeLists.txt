@@ -25,6 +25,10 @@ add_library(relay_core STATIC
   src/process_command.cpp
   src/system_command.cpp
   src/lua_commands.cpp
+  src/calculator.cpp
+  src/calculator_units.cpp
+  src/calculator_datetime.cpp
+  src/calculator_command.cpp
   src/desktop.cpp
   src/updates.cpp
   src/velopack_updates.cpp
@@ -54,6 +58,7 @@ if(MSVC)
 endif()
 
 add_custom_command(TARGET relay POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E rm -f $<TARGET_FILE_DIR:relay>/plugins/calc.lua $<TARGET_FILE_DIR:relay>/plugins/datetime.lua
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/assets $<TARGET_FILE_DIR:relay>/assets
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/plugins $<TARGET_FILE_DIR:relay>/plugins)
 
@@ -64,6 +69,7 @@ add_executable(relay_test
   tests/config.cpp
   tests/watcher.cpp
   tests/commands.cpp
+  tests/calculator.cpp
   tests/datetime.cpp
   tests/frecency.cpp
   tests/updates.cpp
@@ -74,7 +80,7 @@ if(MSVC)
   target_compile_options(relay_test PRIVATE /W3 /utf-8 /bigobj /MP)
 endif()
 enable_testing()
-foreach(suite support config watcher commands datetime frecency updates)
+foreach(suite support config watcher commands calculator datetime frecency updates)
   add_test(NAME ${suite} COMMAND relay_test ${suite})
 endforeach()
 

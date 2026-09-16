@@ -18,6 +18,7 @@ int main(int argc, char** argv) {
         {"config", runConfigTests},
         {"watcher", runWatcherTests},
         {"commands", runCommandTests},
+        {"calculator", runCalculatorTests},
         {"datetime", runDatetimeTests},
         {"frecency", runFrecencyTests},
         {"updates", runUpdateTests},
@@ -34,7 +35,7 @@ int main(int argc, char** argv) {
         }
     }
     if (!found) {
-        std::fprintf(stderr, "Usage: relay_test [all|support|config|watcher|commands|datetime|frecency|updates]\n");
+        std::fprintf(stderr, "Usage: relay_test [all|support|config|watcher|commands|calculator|datetime|frecency|updates]\n");
         return 2;
     }
     return failures ? 1 : 0;

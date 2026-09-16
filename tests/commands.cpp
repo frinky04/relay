@@ -1,3 +1,4 @@
+#include "calculator_command.h"
 #include "suites.h"
 #include "command.h"
 #include "app_command.h"
@@ -13,7 +14,6 @@
 #include <future>
 #include <stdexcept>
 #include <algorithm>
-#include <sol/sol.hpp>
 
 using namespace std::chrono_literals;
 static int failures = 0;
@@ -330,24 +330,15 @@ int runCommandTests() {
         check(!command::validate(invalid).empty(), "dynamic choices cannot declare stale defaults");
     }
     const auto source = std::filesystem::path(RELAY_TEST_SOURCE_DIR);
-    {
-        sol::state lua;
-        lua.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::math, sol::lib::io, sol::lib::debug);
-        const auto path = source / "tests/math_parser.lua";
-        lua.create_named_table("arg", 0, path.generic_string());
-        auto result = lua.safe_script_file(path.string(), sol::script_pass_on_error);
-        if (!result.valid()) { sol::error error = result; printf("%s\n", error.what()); }
-        check(result.valid(), "full math parser suite passes, including generated expressions and malformed-input probes");
-    }
     auto echo = loadLuaCommand(source / "tests/fixtures/echo.lua", copy, openUrl);
     auto web = loadLuaCommand(source / "plugins/web.lua", copy, openUrl);
-    auto calc = loadLuaCommand(source / "plugins/calc.lua", copy, openUrl);
+    auto calc = calculatorCommand(copy);
     {
         std::vector<command::Command> bundled;
         std::vector<std::string> errors;
         loadLuaCommands(bundled, source / "plugins", copy, openUrl, [&](auto error) { errors.push_back(error); });
-        check(errors.empty() && bundled.size() == 3 && bundled[0].name == "calc" && bundled[1].name == "datetime" && bundled[2].name == "web",
-            "bundled content contains calculator, datetime and web commands");
+        check(errors.empty() && bundled.size() == 1 && bundled[0].name == "web",
+            "bundled Lua content contains only web");
         check(command::evaluate(bundled, "/text hello").view.rows.empty() &&
             command::evaluate(bundled, "/echo hello").view.rows.empty(), "removed text command and test fixture are absent from bundled content");
     }
