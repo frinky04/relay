@@ -7,4 +7,5 @@ int runSupportTests();
 int runConfigTests();
 int runWatcherTests();
 int runCommandTests();
+int runDatetimeTests();
 int runFrecencyTests();

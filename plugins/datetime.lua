@@ -1,10 +1,10 @@
--- Standalone English date/time queries. Lua 5.3+, no host or external libraries.
--- parse(text, reference?) -> result | nil, { code, message }
+-- Date/time recognition, calendar arithmetic and copy formats. No external libraries.
+-- parse(text, reference) -> result | nil, { code, message }
 -- format(result, mode?, timezone?) -> { title, subtitle, copy, kind } | nil, error
 -- Reference and timestamp are Unix seconds; calendar fields use local time.
 -- Grammar inspired by Chrono; this is an independent, deliberately smaller parser.
 
-local M = {}
+local datetime = {}
 local MIN_YEAR, MAX_YEAR = 1970, 2999
 local months = { "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December" }
@@ -77,7 +77,7 @@ local function copy_date(d)
 end
 
 local function local_date(timestamp)
-    local ok, d = pcall(os.date, "*t", timestamp)
+    local ok, d = pcall(host.date, "*t", timestamp)
     if not ok or not d or d.year < MIN_YEAR or d.year > MAX_YEAR then return range_error() end
     return d
 end
@@ -111,7 +111,7 @@ local function local_timestamp(d, not_before)
         local input = copy_date(d)
         input.hour, input.min, input.sec = d.hour, d.min, d.sec
         if hint ~= "auto" then input.isdst = hint end
-        local ok, t = pcall(os.time, input)
+        local ok, t = pcall(host.time, input)
         if ok and t then
             local actual = local_date(t)
             if actual then
@@ -125,7 +125,7 @@ local function local_timestamp(d, not_before)
     return select_timestamp(found, normalized, not_before)
 end
 
--- Foreign zones never change TZ or pass foreign wall-clock fields to os.time.
+-- Foreign zones never change TZ or pass foreign wall-clock fields to host.time.
 -- Fixed offsets use Gregorian arithmetic; US regional zones use the rules in
 -- effect since 2007 (NIST DST rules). They are not a historical/IANA database.
 local EPOCH_DAY = ordinal(1970, 1, 1)
@@ -430,6 +430,8 @@ local function duration(tokens, i)
                 return fail("duration", "Use a duration that resolves to whole seconds")
             end
             value, out.has_time = rounded, true
+        else
+            value = math.tointeger(value)
         end
         out[u.field] = out[u.field] + value
         count, i = count + 1, i + 2
@@ -536,14 +538,14 @@ local function expression(tokens, ref)
     return { base = d, duration = dur, sign = sign }
 end
 
-function M.parse(text, reference)
+function datetime.parse(text, reference)
     if type(text) ~= "string" or #text > 256 then
         return fail("input", "Use a date/time expression of at most 256 bytes")
     end
-    if reference == nil then reference = os.time() end
     if type(reference) ~= "number" or not math.tointeger(reference) then
         return fail("reference", "Supply the reference time as whole Unix seconds")
     end
+    reference = math.tointeger(reference)
     local tokens, err
     tokens, err = tokenize(text)
     if not tokens then return nil, err end
@@ -633,7 +635,7 @@ local function long_date(d)
     return string.format("%s, %d %s %d", weekdays[(day_number(d) - 1) % 7 + 1], d.day, months[d.month], d.year)
 end
 
-function M.format(result, mode, timezone)
+function datetime.format(result, mode, timezone)
     mode = mode or (result.precision == "date" and "date" or "time")
     local source, zone = result.source, nil
     if timezone ~= nil then
@@ -685,7 +687,7 @@ function M.format(result, mode, timezone)
             title = iso_datetime(result) .. (zone and " " .. offset_label(result.offset_minutes) or "")
             subtitle = zone and result.zone_label or "Local datetime"
         elseif mode == "utc" then
-            local ok, utc = pcall(os.date, "!*t", result.timestamp)
+            local ok, utc = pcall(host.date, "!*t", result.timestamp)
             if not ok or not utc then return range_error() end
             title, subtitle = iso_datetime(utc), "UTC"
         else
@@ -700,4 +702,100 @@ function M.format(result, mode, timezone)
     return { title = title, subtitle = subtitle, copy = copy, kind = kind }
 end
 
-return M
+-- The host supplies one reference for the entire evaluation. Each action binds
+-- its final copy string, so execution never reads a newer clock or reparses input.
+local function query(text, reference)
+    if #text > 256 then return fail("input", "Use a date/time expression of at most 256 bytes") end
+    local first, last = text:lower():find("%s+to%s+")
+    local destination
+    if first then
+        destination, text = text:sub(last + 1), text:sub(1, first - 1)
+    elseif text:lower():match("%s+to%s*$") then
+        return fail("timezone", "Add a destination after to, such as UTC or PT")
+    end
+    if not text:find("%S") then text = "now" end
+    local result, err = datetime.parse(text, reference)
+    if not result then return nil, err end
+    if destination and not result.timestamp then
+        return fail("time_required", "Add a clock time before converting to another timezone")
+    end
+    local display
+    display, err = datetime.format(result, nil, destination)
+    if not display then return nil, err end
+    if result.timestamp and (not destination or destination:lower():match("^%s*local%s*$")) then
+        local offset = offset_label((civil_timestamp(result) - result.timestamp) // 60)
+        display.subtitle = display.subtitle:gsub("Local time", "Local time (" .. offset .. ")")
+        display.copy = display.copy .. " " .. offset
+    end
+    return { result = result, display = display, destination = destination }
+end
+
+local format_labels = {
+    iso = "ISO 8601 · UTC", unix = "Unix seconds", discord = "Discord timestamp",
+    relative = "Discord relative", day = "Full date", week = "ISO week",
+}
+
+local function copy_verb(name, mode, precision)
+    return {
+        name = name,
+        preview = function(args, context)
+            local prepared, err = query(args[1], context.now)
+            if not prepared then return nil, err.message end
+            local result, display = prepared.result, prepared.display
+            if precision and result.precision ~= precision then return false end
+            local title, value, subtitle = display.title, display.copy, display.subtitle
+            if mode == "iso" then
+                local utc
+                utc, err = datetime.format(result, "utc")
+                if not utc then return nil, err.message end
+                value = utc.copy:gsub(" ", "T") .. "Z"
+            elseif mode == "unix" or mode == "discord" or mode == "relative" then
+                value = tostring(result.timestamp)
+                if mode ~= "unix" then
+                    value = "<t:" .. value .. ":" .. (mode == "relative" and "R" or "f") .. ">"
+                end
+            elseif mode then
+                local formatted
+                formatted, err = datetime.format(result, mode, prepared.destination)
+                if not formatted then return nil, err.message end
+                value = formatted.copy
+            end
+            if mode then
+                title, subtitle = format_labels[mode], value
+            else
+                subtitle = subtitle:gsub("^(%a+), (%d+) (%a+) (%d+)", function(day, date, month, year)
+                    return day:sub(1, 3) .. ", " .. date .. " " .. month:sub(1, 3) .. " " .. year
+                end):gsub("Local time %((UTC[%+%-]%d%d:%d%d)%)", "Local %1"):gsub(" | ", " · ")
+            end
+            return { title = title, subtitle = subtitle, value = value }
+        end,
+        run = function(_, value)
+            return host.copy(value)
+        end,
+    }
+end
+
+return {
+    name = "datetime",
+    recognize_priority = 1, -- An ISO date wins over the calculator's subtraction interpretation.
+    help = "Calculate dates and times; use /datetime for copy formats",
+    args = { { name = "Expression", rest = true, default = "now" } },
+    recognize = function(text, context)
+        if text:find("%S") and query(text, context.now) then return { text } end
+    end,
+    preview = function(args, context)
+        local prepared, err = query(args[1], context.now)
+        if not prepared then return nil, err.message end
+        return prepared.display.title
+    end,
+    verbs = {
+        copy_verb("Copy"),
+        copy_verb("Copy Discord", "discord", "datetime"),
+        copy_verb("Copy Discord Relative", "relative", "datetime"),
+        copy_verb("Copy ISO", "iso", "datetime"),
+        copy_verb("Copy Unix", "unix", "datetime"),
+        copy_verb("Copy Full Date", "day", "date"),
+        copy_verb("Copy ISO Week", "week", "date"),
+    },
+}
+

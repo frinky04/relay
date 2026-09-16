@@ -1,8 +1,17 @@
--- lua test_datetime.lua [--adelaide]
+-- lua datetime_parser.lua [--adelaide]
 -- The optional suite requires the process timezone to be Adelaide; it does not
 -- change the machine timezone. All other tests work in UTC or local time.
 local directory = (arg[0]:match("^(.*[/\\])") or "./")
-local datetime = dofile(directory .. "datetime.lua")
+host = { date = os.date, time = os.time }
+local plugin = dofile(directory .. "../plugins/datetime.lua")
+local function upvalue(fn, wanted)
+    for i = 1, math.huge do
+        local name, value = debug.getupvalue(fn, i)
+        assert(name, "Missing private helper: " .. wanted)
+        if name == wanted then return value end
+    end
+end
+local datetime = upvalue(upvalue(plugin.preview, "query"), "datetime")
 local passed, failed = 0, 0
 
 local function eq(actual, expected)
@@ -262,4 +271,4 @@ else
 end
 
 print(string.format("%d passed, %d failed (%s)", passed, failed, _VERSION))
-os.exit(failed == 0 and 0 or 1)
+assert(failed == 0, "Datetime parser tests failed")

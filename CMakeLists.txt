@@ -63,6 +63,7 @@ add_executable(relay_test
   tests/config.cpp
   tests/watcher.cpp
   tests/commands.cpp
+  tests/datetime.cpp
   tests/frecency.cpp
   tests/updates.cpp
 )
@@ -72,7 +73,7 @@ if(MSVC)
   target_compile_options(relay_test PRIVATE /W3 /utf-8 /bigobj /MP)
 endif()
 enable_testing()
-foreach(suite support config watcher commands frecency updates)
+foreach(suite support config watcher commands datetime frecency updates)
   add_test(NAME ${suite} COMMAND relay_test ${suite})
 endforeach()
 

@@ -1,6 +1,15 @@
--- lua path/to/test_timezones.lua; works under UTC or the system's local zone.
+-- lua path/to/datetime_timezones.lua; works under UTC or the system's local zone.
 local directory = arg[0]:match("^(.*[/\\])") or "./"
-local datetime = dofile(directory .. "datetime.lua")
+host = { date = os.date, time = os.time }
+local plugin = dofile(directory .. "../plugins/datetime.lua")
+local function upvalue(fn, wanted)
+    for i = 1, math.huge do
+        local name, value = debug.getupvalue(fn, i)
+        assert(name, "Missing private helper: " .. wanted)
+        if name == wanted then return value end
+    end
+end
+local datetime = upvalue(upvalue(plugin.preview, "query"), "datetime")
 local reference = 1789480800 -- 2026-09-15T14:00:00Z
 local passed, failed = 0, 0
 local function eq(actual, expected)
@@ -172,4 +181,4 @@ test("malformed zone expressions return errors, not Lua exceptions", function()
 end)
 
 print(string.format("%d timezone tests passed, %d failed (%s)", passed, failed, _VERSION))
-os.exit(failed == 0 and 0 or 1)
+assert(failed == 0, "Datetime parser tests failed")

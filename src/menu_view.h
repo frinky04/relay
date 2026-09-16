@@ -32,6 +32,7 @@ struct MenuRow {
     bool danger = false;
     bool updateCheck = false;           // display native update status here
     bool preserveInput = false;         // keep the menu and input after success
+    bool stacked = false;              // subtitle occupies a second, smaller line
     // UI event handler; stayOpen records Shift+Enter. Only short UI operations
     // belong here. Command execution dispatches off the UI thread.
     std::function<void(bool stayOpen)> activate;

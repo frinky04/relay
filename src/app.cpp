@@ -7,6 +7,7 @@
 #include "window_command.h"
 #include "process_command.h"
 #include "lua_commands.h"
+#include "menu_layout.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -320,7 +321,7 @@ void App::destroyDevice() {
 // only moves the window instead of stalling on ResizeBuffers every frame.
 int App::maxHeight() const {
     const float S = m_scale;
-    return (int)std::ceil(theme::INPUT_H * S + 1.0f + (m_config.maxRows + 1) * theme::ROW_H * S + theme::FOOT_H * S);
+    return (int)std::ceil(theme::INPUT_H * S + 1.0f + (m_config.maxRows + 1) * theme::ROW_H_DETAIL * S + theme::FOOT_H * S);
 }
 
 void App::ensureBuffers(int w, int h) {
@@ -648,6 +649,7 @@ void App::onNotice(Notice n) {
 //                         underlined args, heavy verb) and ghost slots follow the
 //                         caret naming what is still to type
 //   result row  ROW_H     [icon, glyph or digit 18][8][title][8][subtitle] ... [16][context noun]
+//   detail row  ROW_H_DETAIL  title above a smaller subtitle; same gutter and right context
 //   footer      FOOT_H    "n/N" ... "Enter <verb>" [16] "Tab Fill" [16] "Esc Close"
 static int caretCallback(ImGuiInputTextCallbackData* d) {
     if (auto* toEnd = (bool*)d->UserData; *toEnd) {
@@ -669,7 +671,7 @@ void App::drawUi() {
     const float gapM = theme::GAP_M * S;
     const float iconSz = theme::ICON_SZ * S;
     const float textX = padX + iconSz + gapS;
-    const float H = inputH + 1.0f + (MAX_ROWS + 1) * rowH + footH; // oversized; the HWND clips
+    const float H = inputH + 1.0f + (MAX_ROWS + 1) * theme::ROW_H_DETAIL * S + footH; // oversized; the HWND clips
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(W, H));
@@ -773,7 +775,7 @@ void App::drawUi() {
     const bool searching = m_waiting && !m_hasView && m_input[0] != 0;
     const bool noMatch = n == 0 && (searching || (!m_spanText.empty() && m_slots.empty()));
     const int listRows = noMatch ? 1 : std::min(n, MAX_ROWS);
-    const float targetH = inputH + (listRows ? 1.0f + listRows * rowH + footH : 0);
+    const MenuLayout layout(m_results, rowH, theme::ROW_H_DETAIL * S);
     // Read Alt once for both activation and presentation. Opening Alt must be
     // released before shortcuts become available, even while the list is empty.
     const bool altDown = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
@@ -801,6 +803,8 @@ void App::drawUi() {
     // Navigation defines the viewport now; animation only positions its rows.
     // Shortcut labels and execution use this same target, never rounded motion.
     const int firstTarget = std::clamp(m_selected - MAX_ROWS + 1, 0, std::max(0, n - MAX_ROWS));
+    const float listHeight = noMatch ? rowH : layout.position(float(firstTarget + listRows)) - layout.position(float(firstTarget));
+    const float targetH = inputH + (listRows ? 1.0f + listHeight + footH : 0);
     const int shortcutCount = std::min({9, MAX_ROWS, n - firstTarget});
     if (altActive && !m_waiting) {
         for (int d = 1; d <= shortcutCount; ++d) {
@@ -847,19 +851,22 @@ void App::drawUi() {
     }
 
     if (n) {
-        const float sy = listTop + (m_animSel - m_animScroll) * rowH;
-        dl->AddRectFilled(ImVec2(0, sy), ImVec2(W, sy + rowH), theme::rgb(theme::BG_SELECTED));
-        dl->AddRectFilled(ImVec2(0, sy), ImVec2(2.0f * S, sy + rowH),
+        const float sy = listTop + layout.position(m_animSel) - layout.position(m_animScroll);
+        const float bottom = listTop + layout.position(m_animSel + 1) - layout.position(m_animScroll);
+        dl->AddRectFilled(ImVec2(0, sy), ImVec2(W, bottom), theme::rgb(theme::BG_SELECTED));
+        dl->AddRectFilled(ImVec2(0, sy), ImVec2(2.0f * S, bottom),
             theme::rgb(m_results[m_selected].danger ? theme::DANGER : theme::ACCENT));
     }
 
     const int firstIdx = std::max(0, (int)std::floor(m_animScroll));
-    const int lastIdx = std::min(n - 1, firstIdx + MAX_ROWS + 1);
-    for (int idx = firstIdx; idx <= lastIdx; ++idx) {
+    for (int idx = firstIdx; idx < n; ++idx) {
         const MenuRow& r = m_results[idx];
         const std::string& title = r.title;
         const std::string& kind = r.kind;
-        const float y0 = listTop + (idx - m_animScroll) * rowH, y1 = y0 + rowH;
+        const float y0 = listTop + layout.position(float(idx)) - layout.position(m_animScroll);
+        const float y1 = listTop + layout.position(float(idx + 1)) - layout.position(m_animScroll);
+        const float rowHeight = y1 - y0;
+        const float titleY = r.stacked ? y0 + gapS : textY(y0, rowHeight, fs);
         if (y0 >= footY) break;
         const bool danger = r.danger;
         // Gutter: the app icon when the row has one, else one glyph from the
@@ -873,7 +880,8 @@ void App::drawUi() {
             else if (kind == "Notice") { glyph = "•"; glyphCol = theme::ACCENT_TEXT; }
             else glyph = "›";
         }
-        const bool hovered = !m_peeking && !m_waiting && io.MousePos.x >= 0 && io.MousePos.x < W && io.MousePos.y >= y0 && io.MousePos.y < y1 && io.MousePos.y < footY;
+        const bool hovered = !m_peeking && !m_waiting && io.MousePos.x >= 0 && io.MousePos.x < W &&
+            io.MousePos.y >= std::max(y0, listTop) && io.MousePos.y < y1 && io.MousePos.y < footY;
         if (hovered && mouseMoved && m_selected != idx) { m_selected = idx; m_armedIdx = -1; }
         if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { dl->PopClipRect(); execute(idx, false); ImGui::End(); return; }
         const int digit = idx - firstTarget + 1;
@@ -888,19 +896,19 @@ void App::drawUi() {
                 if (t >= 1.0f) m_iconReveal.erase(it);
                 else { a = t; lift = (1.0f - t) * 2.0f * S; }
             }
-            const float iy = y0 + (rowH - iconSz) * 0.5f + lift;
+            const float iy = (r.stacked ? titleY + (fs - iconSz) * 0.5f : y0 + (rowHeight - iconSz) * 0.5f) + lift;
             dl->AddImage((ImTextureID)(intptr_t)tex, ImVec2(padX, iy), ImVec2(padX + iconSz, iy + iconSz),
                          ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, (int)(a * (1.0f - altAlpha) * 255)));
         } else if (!r.iconKey.empty()) {
             m_iconPending.insert(r.iconKey);
         } else if (glyph && altAlpha < 1.0f) {
             const ImVec2 gsz = font->CalcTextSizeA(fs, FLT_MAX, 0, glyph);
-            dl->AddText(ImVec2(padX + (iconSz - gsz.x) * 0.5f, textY(y0, rowH, fs)), theme::rgb(glyphCol, 1.0f - altAlpha), glyph);
+            dl->AddText(ImVec2(padX + (iconSz - gsz.x) * 0.5f, titleY), theme::rgb(glyphCol, 1.0f - altAlpha), glyph);
         }
         if (digitAlpha > 0.0f) {
             const char d[2] = { (char)('0' + digit), 0 };
             const ImVec2 dsz = font->CalcTextSizeA(fs, FLT_MAX, 0, d);
-            dl->AddText(ImVec2(padX + (iconSz - dsz.x) * 0.5f, textY(y0, rowH, fs)), theme::rgb(theme::ACCENT_TEXT, digitAlpha), d);
+            dl->AddText(ImVec2(padX + (iconSz - dsz.x) * 0.5f, titleY), theme::rgb(theme::ACCENT_TEXT, digitAlpha), d);
         }
 
         // Right edge: the command noun for rows found outside their command.
@@ -908,18 +916,26 @@ void App::drawUi() {
         if (!r.context.empty()) {
             const ImVec2 ctxSz = font->CalcTextSizeA(fsSm, FLT_MAX, 0, r.context.c_str());
             const float ctxX = kindRight - ctxSz.x;
-            dl->AddText(font, fsSm, ImVec2(ctxX, textY(y0, rowH, fsSm)), theme::rgb(theme::TEXT_MUTED), r.context.c_str());
+            const float contextY = r.stacked ? titleY + (fs - fsSm) * 0.5f : textY(y0, rowHeight, fsSm);
+            dl->AddText(font, fsSm, ImVec2(ctxX, contextY), theme::rgb(theme::TEXT_MUTED), r.context.c_str());
             textMaxX = ctxX - gapM;
         }
 
-        const float ty = textY(y0, rowH, fs);
+        const float ty = titleY;
         const ImVec2 titleSz = font->CalcTextSizeA(fs, FLT_MAX, 0, title.c_str());
         const bool titleFits = textX + titleSz.x <= textMaxX;
         if (danger) ImGui::PushStyleColor(ImGuiCol_Text, theme::rgb(theme::DANGER));
         ImGui::RenderTextEllipsis(dl, ImVec2(textX, ty), ImVec2(textMaxX, y1), textMaxX, title.c_str(), nullptr, &titleSz);
         if (danger) ImGui::PopStyleColor();
         const std::string& subtitle = r.subtitle;
-        if (titleFits && !subtitle.empty()) {
+        if (r.stacked && !subtitle.empty()) {
+            ImGui::PushFont(font, fsSm);
+            ImGui::PushStyleColor(ImGuiCol_Text, theme::rgb(theme::TEXT_2));
+            ImGui::RenderTextEllipsis(dl, ImVec2(textX, ty + fs + gapS), ImVec2(kindRight, y1), kindRight,
+                subtitle.c_str(), nullptr, nullptr);
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+        } else if (titleFits && !subtitle.empty()) {
             const float sx = textX + titleSz.x + gapS;
             if (sx + fs * 3 < textMaxX) {
                 ImGui::PushStyleColor(ImGuiCol_Text, theme::rgb(theme::TEXT_2));

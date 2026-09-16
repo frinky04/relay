@@ -2,6 +2,7 @@
 #include "config.h"
 #include "fuzzy.h"
 #include "notices.h"
+#include "menu_layout.h"
 #include <cstdio>
 #include <vector>
 
@@ -12,6 +13,20 @@ int runSupportTests() {
     auto check = [&](bool ok, const char* description) {
         if (!ok) { ++failures; printf("FAIL: %s\n", description); }
     };
+
+    {
+        std::vector<MenuRow> rows(5);
+        rows[1].stacked = rows[3].stacked = true;
+        const MenuLayout layout(rows, 30, 50);
+        check(layout.position(1) == 30 && layout.position(2) == 80 && layout.position(5) == 190,
+            "detail rows expand without changing neighboring compact rows");
+        check(layout.position(4) - layout.position(1) == 130,
+            "a three-row logical viewport includes its complete mixed-height rows");
+        check(layout.position(1.5f) == 55 && layout.position(2.5f) == 95,
+            "animated selection edges interpolate continuously between different row heights");
+        check(layout.position(-1) == 0 && layout.position(9) == 190 && MenuLayout({}, 30, 50).position(1) == 0,
+            "empty and replaced lists safely clamp animated positions");
+    }
 
     check(fuzzy::score("xyz", "Google Chrome") == 0, "unrelated input does not match");
     check(fuzzy::score("gc", "Google Chrome") > 0, "abbreviations match word boundaries");

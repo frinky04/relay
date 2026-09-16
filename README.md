@@ -18,12 +18,16 @@ Run `/relay Rescan Apps` after installing or removing apps to refresh its app li
 | `/window code` | Find an open window by title or app name and switch to it |
 | `/web lua documentation` | Enter searches Google; select Search DuckDuckGo to use that engine |
 | `5 + 5` | Show `10`; Enter copies the result |
+| `tomorrow at 7pm` | Show the date and time; Enter copies the absolute value |
+| `/datetime 4pm ET to UTC` | Convert timezones; choose ISO, Unix or Discord copy formats |
 | `/process paint` | Find a running process to stop |
 | `/relay ` | Open settings, manage plugins, update or quit Relay |
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use its default action. **Tab** fills names and adds quotes where needed; the hints show what comes next.
 
 After completing an app name with Tab, choose Open, Run as Administrator, Open File Location or Copy Path. Window actions include Switch, Close, Minimize, Maximize and Move to Other Monitor. Close requires two Enter presses and lets the app prompt to save.
+
+Use `/datetime ` for the current time and all copy formats. Date-only expressions offer date, weekday and ISO week output. Timezones support local time, UTC, numeric offsets and US Eastern/Central/Mountain/Pacific profiles. `ET` follows daylight saving; `EST` is a fixed offset.
 
 Rescan Apps keeps the menu open and shows Done when finished. Check for Updates also keeps your input and selection in place, showing progress and the result on its action row.
 

@@ -75,19 +75,25 @@ void ghosts(Evaluation& out, const Command& cmd, size_t from) {
     if (!rest && cmd.verbs.size() > 1) out.view.slots.push_back({Slot::Verb, cmd.verbs.front().name, {}});
 }
 
-void add(Evaluation& out, MenuRow row, const Verb* verb = nullptr, std::vector<std::string> args = {}) {
+void add(Evaluation& out, MenuRow row, const Verb* verb = nullptr, std::vector<std::string> args = {},
+    std::function<std::string()> action = {}) {
     if (verb) {
         row.actionLabel = verb->name;
         row.danger = verb->danger;
         row.updateCheck = verb->updateCheck;
         row.preserveInput = verb->preserveInput;
-        out.actions.push_back([run = verb->run, args = std::move(args)] { return run(args); });
+        if (action) out.actions.push_back(std::move(action));
+        else out.actions.push_back([run = verb->run, args = std::move(args)] { return run(args); });
     } else out.actions.push_back({});
     out.view.rows.push_back(std::move(row));
 }
 
-Preview preview(const Command& cmd, const std::vector<std::string>& args) {
-    try { return cmd.preview ? cmd.preview(args) : Preview{}; }
+Preview preview(const Command& cmd, const std::vector<std::string>& args, const Context& context,
+    const Verb* verb = nullptr) {
+    try {
+        if (verb) return verb->preview ? verb->preview(args, context) : Preview{};
+        return cmd.preview ? cmd.preview(args, context) : Preview{};
+    }
     catch (const std::exception& e) { return {{}, std::string(e.what()) + "; fix the plugin and run /relay Reload Plugins"}; }
 }
 
@@ -99,23 +105,37 @@ MenuRow nounRow(const Command& cmd, const std::string& text, TextSpan span) {
     return row;
 }
 
+using Rank = std::pair<bool, int>;
+
 void showVerbs(Evaluation& out, const Command& cmd, const std::vector<std::string>& args,
-    const std::vector<const Verb*>& matches) {
+    const std::vector<const Verb*>& matches, std::vector<Rank>* ranks = nullptr) {
     if (matches.empty()) return;
-    auto result = preview(cmd, args);
+    auto result = preview(cmd, args, out.context);
     if (!result.error.empty()) {
         MenuRow row; row.title = "/" + cmd.name; row.subtitle = result.error; row.kind = "Error";
         add(out, std::move(row));
         return;
     }
-    for (const auto* verb : matches) {
+    std::vector<Rank> visibleRanks;
+    for (size_t i = 0; i < matches.size(); ++i) {
+        const auto* verb = matches[i];
+        auto display = verb->preview ? preview(cmd, args, out.context, verb) : result;
+        if (display.hidden) continue;
+        if (ranks) visibleRanks.push_back((*ranks)[i]);
         MenuRow row;
-        row.title = result.title.empty() ? verb->name : result.title;
-        row.subtitle = verb->help.empty() ? cmd.help : verb->help;
-        if (!result.title.empty()) row.subtitle = verb->name + " — " + row.subtitle;
-        row.kind = result.title.empty() ? "Verb" : "Result";
-        add(out, std::move(row), verb, args);
+        if (!display.error.empty()) {
+            row.title = verb->name; row.subtitle = display.error; row.kind = "Error";
+            add(out, std::move(row));
+            continue;
+        }
+        row.title = display.title.empty() ? verb->name : display.title;
+        row.subtitle = display.subtitle.empty() ? (verb->help.empty() ? cmd.help : verb->help) : display.subtitle;
+        row.stacked = display.stacked;
+        if (!display.title.empty() && !row.stacked) row.subtitle = verb->name + " — " + row.subtitle;
+        row.kind = display.title.empty() ? "Verb" : "Result";
+        add(out, std::move(row), verb, args, std::move(display.action));
     }
+    if (ranks) *ranks = std::move(visibleRanks);
 }
 
 void verbs(Evaluation& out, const Command& cmd, const std::vector<std::string>& args,
@@ -139,7 +159,7 @@ void verbs(Evaluation& out, const Command& cmd, const std::vector<std::string>& 
 
 void recognized(Evaluation& out, const Command& cmd) {
     try {
-        auto args = cmd.recognize(out.view.text);
+        auto args = cmd.recognize(out.view.text, out.context);
         if (!args) return;
         if (args->size() > cmd.args.size() || !fillDefaults(cmd, *args))
             throw std::runtime_error("Recognition must supply the command's arguments");
@@ -149,15 +169,15 @@ void recognized(Evaluation& out, const Command& cmd) {
             if (!choice) throw std::runtime_error("Recognition must use declared argument choices");
             (*args)[i] = value(*choice);
         }
+        const auto first = out.view.rows.size();
         verbs(out, cmd, *args, {}, true);
+        for (size_t i = first; i < out.view.rows.size(); ++i) out.view.rows[i].context = "/" + cmd.name;
     } catch (const std::exception& e) {
         MenuRow row; row.title = "/" + cmd.name; row.kind = "Error";
         row.subtitle = std::string(e.what()) + "; fix the plugin and run /relay Reload Plugins";
         add(out, std::move(row));
     }
 }
-
-using Rank = std::pair<bool, int>;
 
 void choices(Evaluation& out, const Command& cmd, const std::vector<std::string>& args, std::string_view needle, TextSpan span,
     std::vector<Rank>* ranks = nullptr) {
@@ -199,11 +219,15 @@ void choices(Evaluation& out, const Command& cmd, const std::vector<std::string>
         if (out.view.text.empty() || out.view.text.front() != '/') replacement = "/" + cmd.name + " " + replacement;
         row.completion = complete(out.view.text, span, replacement);
         const Verb* verb = fillDefaults(cmd, filled) ? &cmd.verbs.front() : nullptr;
+        std::function<std::string()> action;
         if (verb) {
-            auto result = preview(cmd, filled);
+            auto result = preview(cmd, filled, out.context);
+            if (result.error.empty() && verb->preview) result = preview(cmd, filled, out.context, verb);
             if (!result.error.empty()) { row.subtitle = result.error; verb = nullptr; }
+            else if (result.hidden) verb = nullptr;
+            else action = std::move(result.action);
         }
-        add(out, std::move(row), verb, std::move(filled));
+        add(out, std::move(row), verb, std::move(filled), std::move(action));
     }
 }
 
@@ -247,7 +271,7 @@ void search(Evaluation& out, const std::vector<Command>& commands) {
         if (nounRank.second)
             matches.push_back({nounRow(declaration, out.view.text, {0, out.view.text.size()}), {}, nounRank, false});
         if (!declaration.search) continue;
-        Evaluation found; found.view.text = out.view.text;
+        Evaluation found; found.context = out.context; found.view.text = out.view.text;
         const auto* cmd = resolve(found, declaration);
         std::vector<Rank> ranks;
         const bool choiceSearch = cmd && !cmd->args.empty() && cmd->args.front().choices.has_value();
@@ -268,7 +292,7 @@ void search(Evaluation& out, const std::vector<Command>& commands) {
                     ranks.push_back(score);
                     verbs.push_back(&verb);
                 }
-                showVerbs(found, *cmd, args, verbs);
+                showVerbs(found, *cmd, args, verbs, &ranks);
                 // The noun identifies the command; help (including version text) stays visible.
                 for (size_t i = 0; i < found.view.rows.size(); ++i)
                     if (found.actions[i]) found.view.rows[i].context = "/" + cmd->name;
@@ -337,11 +361,17 @@ std::string validate(const Command& cmd) {
     return {};
 }
 
-Evaluation evaluate(const std::vector<Command>& commands, const std::string& text) {
-    Evaluation out; out.view.text = text;
+Evaluation evaluate(const std::vector<Command>& commands, const std::string& text, Context context) {
+    Evaluation out; out.context = context; out.view.text = text;
     if (text.empty() || text[0] != '/') {
-        if (!text.empty()) for (const auto& cmd : commands)
-            if (cmd.recognize) recognized(out, cmd);
+        if (!text.empty()) {
+            std::vector<const Command*> recognizers;
+            for (const auto& cmd : commands) if (cmd.recognize) recognizers.push_back(&cmd);
+            std::stable_sort(recognizers.begin(), recognizers.end(), [](auto* a, auto* b) {
+                return a->recognitionPriority > b->recognitionPriority;
+            });
+            for (const auto* cmd : recognizers) recognized(out, *cmd);
+        }
         if (text.empty()) {
             for (const auto& cmd : commands)
                 if (cmd.name == "app") choices(out, cmd, {}, text, {0, text.size()});

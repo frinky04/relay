@@ -31,6 +31,7 @@ constexpr float GAP_M         = 16.0f;  // between groups: text|kind tag, footer
 constexpr float ICON_SZ       = 18.0f;
 constexpr float FONT_SIZE     = 14.0f;  // titles, query
 constexpr float FONT_SIZE_SM  = 12.0f;  // kind tags, footer
+constexpr float ROW_H_DETAIL  = FONT_SIZE + FONT_SIZE_SM + 3 * GAP_S; // two lines, gap and vertical padding
 
 // Motion. Time constants (seconds) for exponential smoothing. 0.035 reads as
 // instant-but-alive; above 0.08 starts to read as lag.

@@ -54,7 +54,7 @@ int runCommandTests() {
             {"First", "Editor", {}, "first"},
             {"Second", "Editor", {}, "second"}}});
         cmd.verbs.push_back({"Open", false, [&](const auto& args) { selected = args[0]; return std::string{}; }});
-        cmd.preview = [](const auto& args) -> command::Preview {
+        cmd.preview = [](const auto& args, const auto&) -> command::Preview {
             return args[0] == "reject" ? command::Preview{{}, "Unavailable; retry"} : command::Preview{};
         };
         std::vector<command::Command> catalog{std::move(cmd)};
@@ -263,8 +263,8 @@ int runCommandTests() {
         std::vector<command::Command> bundled;
         std::vector<std::string> errors;
         loadLuaCommands(bundled, source / "plugins", copy, openUrl, [&](auto error) { errors.push_back(error); });
-        check(errors.empty() && bundled.size() == 2 && bundled[0].name == "calc" && bundled[1].name == "web",
-            "bundled content contains only calculator and web commands");
+        check(errors.empty() && bundled.size() == 3 && bundled[0].name == "calc" && bundled[1].name == "datetime" && bundled[2].name == "web",
+            "bundled content contains calculator, datetime and web commands");
         check(command::evaluate(bundled, "/text hello").view.rows.empty() &&
             command::evaluate(bundled, "/echo hello").view.rows.empty(), "removed text command and test fixture are absent from bundled content");
     }
@@ -298,7 +298,7 @@ int runCommandTests() {
     check(query("web cats").view.rows.empty(), "bare text does not implicitly parse command arguments");
     {
         auto plain = web;
-        plain.preview = [](auto&) -> command::Preview { throw std::runtime_error("Must not preview an entrance"); };
+        plain.preview = [](auto&, const auto&) -> command::Preview { throw std::runtime_error("Must not preview an entrance"); };
         std::vector<command::Command> catalog{plain,
             appCommand({{"Web", "web-app"}, {"Web Browser", "browser-app"}},
                 [&](auto& target, desktop::AppAction) { launched = target; return std::string(); })};
@@ -485,7 +485,7 @@ int runCommandTests() {
             appCommand({{"Quit", "quit-app"}, {"Quitter", "quitter-app"}, {"5 + 5", "math-app"}},
                 [&](auto& target, desktop::AppAction) { launched = target; return std::string(); }), calc};
         auto originalPreview = catalog[0].preview;
-        catalog[0].preview = [&](auto& args) { ++previews; return originalPreview(args); };
+        catalog[0].preview = [&](auto& args, const auto& context) { ++previews; return originalPreview(args, context); };
         copied.clear(); launched.clear();
         check(command::evaluate(catalog, "").view.rows.size() == 3 && loads == 0 && previews == 0,
             "empty input keeps alphabetical apps without search callbacks");
@@ -512,7 +512,7 @@ int runCommandTests() {
             "recognition stays above exact global matches");
         auto fuzzy = command::evaluate(catalog, "qcp");
         check(fuzzy.view.rows.size() == 1 && fuzzy.actions[0]().empty() && copied == "Quick", "fuzzy verb search executes the matched nondefault verb");
-        catalog[0].preview = [](auto&) -> command::Preview { return {{}, "Unavailable; try again"}; };
+        catalog[0].preview = [](auto&, const auto&) -> command::Preview { return {{}, "Unavailable; try again"}; };
         auto error = command::evaluate(catalog, "Quit");
         check(error.view.rows.back().kind == "Error" && !error.actions.back() && error.view.rows[0].kind == "App",
             "preview errors cannot displace executable exact matches");
