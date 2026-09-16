@@ -22,15 +22,15 @@ constexpr unsigned ACCENT_TEXT   = 0x94bce4; // lighter for antialiased text and
 constexpr unsigned DANGER        = 0xed756e; // destructive verbs (6.9:1 on BG, 5.7:1 on BG_SELECTED)
 
 // Layout metrics (logical px, scaled by DPI at runtime). Width and row count come from config.
-constexpr float INPUT_H       = 40.0f;
-constexpr float ROW_H         = 30.0f;
-constexpr float FOOT_H        = 24.0f;
+constexpr float INPUT_H       = 44.0f;
+constexpr float ROW_H         = 34.0f;
+constexpr float FOOT_H        = 27.0f;
 constexpr float PAD_X         = 12.0f;
 constexpr float GAP_S         = 8.0f;   // within a group: icon|title, title|subtitle
 constexpr float GAP_M         = 16.0f;  // between groups: text|kind tag, footer items
 constexpr float ICON_SZ       = 18.0f;
-constexpr float FONT_SIZE     = 14.0f;  // titles, query
-constexpr float FONT_SIZE_SM  = 12.0f;  // kind tags, footer
+constexpr float FONT_SIZE     = 18.0f;  // titles, query
+constexpr float FONT_SIZE_SM  = 15.0f;  // kind tags, footer
 constexpr float ROW_H_DETAIL  = FONT_SIZE + FONT_SIZE_SM + 3 * GAP_S; // two lines, gap and vertical padding
 
 // Motion. Time constants (seconds) for exponential smoothing. 0.035 reads as

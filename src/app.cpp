@@ -63,9 +63,19 @@ LRESULT App::handle(UINT m, WPARAM w, LPARAM l) {
     case WM_SYSCOMMAND:
         if ((w & 0xfff0) == SC_KEYMENU) return 0; // alt alone must not open a menu
         break;
-    case WM_DPICHANGED:
-        setScale(HIWORD(w) / 96.0f);
+    case WM_DPICHANGED: {
+        const float scale = HIWORD(w) / 96.0f;
+        // placeWindow already supplies scaled geometry when opening on another monitor.
+        if (scale == m_scale) return 0;
+        setScale(scale);
+        const RECT& rect = *reinterpret_cast<const RECT*>(l);
+        m_winW = rect.right - rect.left;
+        m_winH = rect.bottom - rect.top;
+        if (m_swap) ensureBuffers(m_winW, maxHeight());
+        SetWindowPos(m_hwnd, nullptr, rect.left, rect.top, m_winW, m_winH,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
         return 0;
+    }
     case WM_APP_NOTICE: {
         auto* p = (std::pair<std::string, std::string>*)l;
         onNotice(Notice{ p->first, p->second, GetTickCount64() });
@@ -347,20 +357,22 @@ void App::placeWindow() {
     GetMonitorInfoW(mon, &mi);
     UINT dx = 96, dy = 96;
     GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &dx, &dy);
+    const float previousScale = m_scale;
     setScale(dx / 96.0f);
     int w = (int)(m_config.width * m_scale);
     int x = mi.rcWork.left + ((mi.rcWork.right - mi.rcWork.left) - w) / 2;
     int y = mi.rcWork.top + (int)((mi.rcWork.bottom - mi.rcWork.top) * 0.22f);
-    int h = m_winH ? m_winH : (int)(theme::INPUT_H * m_scale);
+    int h = m_winH ? std::max(1, (int)std::lround(m_winH * m_scale / previousScale))
+                  : (int)(theme::INPUT_H * m_scale);
     ensureBuffers(w, maxHeight());
-    SetWindowPos(m_hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
     m_winW = w; m_winH = h;
+    SetWindowPos(m_hwnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
 }
 
 void App::setScale(float s) {
+    m_animH *= s / m_scale;
     m_scale = s;
-    theme::apply(s);
-    ImGui::GetStyle().FontScaleDpi = s;
+    if (ImGui::GetCurrentContext()) theme::apply(s);
 }
 
 // ---------------------------------------------------------------- show / hide ---
@@ -929,7 +941,8 @@ void App::drawUi() {
         if (danger) ImGui::PopStyleColor();
         const std::string& subtitle = r.subtitle;
         if (r.stacked && !subtitle.empty()) {
-            ImGui::PushFont(font, fsSm);
+            // PushFont takes a logical size and applies FontScaleDpi itself.
+            ImGui::PushFont(font, theme::FONT_SIZE_SM);
             ImGui::PushStyleColor(ImGuiCol_Text, theme::rgb(theme::TEXT_2));
             ImGui::RenderTextEllipsis(dl, ImVec2(textX, ty + fs + gapS), ImVec2(kindRight, y1), kindRight,
                 subtitle.c_str(), nullptr, nullptr);

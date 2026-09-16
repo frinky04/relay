@@ -19,6 +19,8 @@ static ImVec4 v4(unsigned hex, float a = 1.0f) {
 void apply(float scale) {
     ImGuiStyle& s = ImGui::GetStyle();
     s = ImGuiStyle(); // reset before scaling
+    s.FontSizeBase      = FONT_SIZE;
+    s.FontScaleDpi      = scale;
     s.WindowPadding     = ImVec2(0, 0);
     s.WindowBorderSize  = 0.0f; // DWM draws the 1px border (DWMWA_BORDER_COLOR); no second one
     s.WindowRounding    = 0.0f;
