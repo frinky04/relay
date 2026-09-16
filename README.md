@@ -25,7 +25,7 @@ Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave of
 
 After completing an app name with Tab, choose Open, Run as Administrator, Open File Location or Copy Path. Window actions include Switch, Close, Minimize, Maximize and Move to Other Monitor. Close requires two Enter presses and lets the app prompt to save.
 
-Check for Updates keeps your input and selection in place and shows progress and the result on its action row.
+Rescan Apps keeps the menu open and shows Done when finished. Check for Updates also keeps your input and selection in place, showing progress and the result on its action row.
 
 **Kill requires two Enter presses and discards unsaved work.**
 
@@ -38,6 +38,7 @@ Check for Updates keeps your input and selection in place and shows progress and
 | Up / Down | Select a row |
 | Shift+Enter | Run, clear the input and stay open |
 | Alt+1 through Alt+9 | Activate a numbered row; destructive actions are excluded |
+| Alt+Shift+1 through Alt+Shift+9 | Fill a numbered row like Tab, revealing its verbs without running it |
 | Escape | Hide Relay |
 
 Reopening starts with empty input. Use `/relay Quit` to exit.

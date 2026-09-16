@@ -539,9 +539,9 @@ void App::takeEngineResults() {
         for (size_t i = 0; i < result->view.rows.size(); ++i) {
             auto row = std::move(result->view.rows[i]);
             if (!row.actionLabel.empty()) {
-                row.activate = [this, generation = m_generation, i, index = m_results.size(), title = row.title, kind = row.kind, updateCheck = row.updateCheck](bool stayOpen) {
+                row.activate = [this, generation = m_generation, i, index = m_results.size(), title = row.title, kind = row.kind, preserveInput = row.preserveInput](bool stayOpen) {
                     if (!m_engine.execute(generation, i, true)) return;
-                    m_pendingAction = PendingAction{generation, index, stayOpen || updateCheck, updateCheck};
+                    m_pendingAction = PendingAction{generation, index, stayOpen || preserveInput, preserveInput};
                     m_results[index].title = title;
                     m_results[index].kind = kind;
                     m_results[index].subtitle = "Running";
@@ -559,7 +559,16 @@ void App::takeEngineResults() {
         if (!done->error.empty()) logf("command: %s", done->error.c_str());
         if (!pending || done->generation != m_generation || pending->generation != done->generation) return;
         if (done->error.empty()) {
-            if (pending->preserveInput) return;
+            if (pending->preserveInput) {
+                if (pending->row < m_results.size()) {
+                    auto& row = m_results[pending->row];
+                    row.title = row.actionLabel;
+                    row.subtitle = "Done";
+                    row.kind = "Result";
+                    refreshUpdateRows();
+                }
+                return;
+            }
             if (pending->stayOpen) {
                 writeCompletion("");
                 if (GetForegroundWindow() != m_hwnd) {
@@ -769,7 +778,7 @@ void App::drawUi() {
     if (!altDown) m_altReleased = true;
     const bool altActive = !m_peeking && altDown && m_altReleased;
 
-    // --- keys. Enter runs, Tab autofills, Alt+digit picks. Backspace is just editing.
+    // --- keys. Enter runs, Tab fills; Alt+digit runs, Alt+Shift+digit fills.
     if (!m_peeking) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { hide(); ImGui::End(); return; }
         if (n && !m_waiting) {
@@ -795,7 +804,11 @@ void App::drawUi() {
         for (int d = 1; d <= shortcutCount; ++d) {
             if (!ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + d - 1), false)) continue;
             const int idx = firstTarget + d - 1;
-            if (!m_results[idx].danger) { execute(idx, false); ImGui::End(); return; }
+            if (m_results[idx].danger) continue;
+            if (io.KeyShift) autofill(idx);
+            else execute(idx, false);
+            ImGui::End();
+            return;
         }
     }
 

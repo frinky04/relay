@@ -599,7 +599,13 @@ int runCommandTests() {
         }
         for (const auto& row : actions.view.rows)
             check(row.updateCheck == (row.actionLabel == "Check for Updates"),
-                "only Check for Updates retains input and displays update status");
+                "only Check for Updates displays update status");
+        for (const auto* input : {"/relay ", "rescan", "Check for Updates"}) {
+            const auto rows = command::evaluate(catalog, input);
+            for (const auto& row : rows.view.rows)
+                check(row.preserveInput == (row.actionLabel == "Rescan Apps" || row.actionLabel == "Check for Updates"),
+                    "menu preservation is independent of update status in scoped and global results");
+        }
         auto version = command::evaluate(catalog, "/relay version");
         check(version.view.rows.size() == 1 && version.view.rows[0].title == "Copy Version", "typing version discovers Copy Version through normal verb matching");
         auto globalVersion = command::evaluate(catalog, "version");
@@ -762,6 +768,17 @@ int runCommandTests() {
         }
     }
     {
+        std::vector<command::Command> catalog{appCommand({{"Editor", "old-target"}},
+            [&](const auto& target, desktop::AppAction) { launched = target; return std::string{}; })};
+        auto displayed = command::evaluate(catalog, "Editor");
+        catalog[0] = appCommand({{"Editor", "new-target"}},
+            [&](const auto& target, desktop::AppAction) { launched = target; return std::string{}; });
+        check(displayed.actions[0]().empty() && launched == "old-target",
+            "displayed actions own their bindings across catalog replacement");
+        check(command::evaluate(catalog, "Editor").actions[0]().empty() && launched == "new-target",
+            "new queries bind the rescanned catalog");
+    }
+    {
         Signal scanSignal;
         Engine scanEngine;
         std::thread::id worker;
@@ -784,7 +801,7 @@ int runCommandTests() {
         }, [&](auto& commands) {
             ++pluginLoads;
             command::Command plugin{"probe", "Test plugin state"};
-            plugin.verbs.push_back({"Run", false, [count = 0](auto&) mutable { ++count; return std::to_string(count); }});
+            plugin.verbs.push_back({"Run", false, [count = std::make_shared<int>(0)](auto&) { return std::to_string(++*count); }});
             commands.push_back(std::move(plugin));
         }, [&] { scanSignal.notify(); }, [&] {
             check(std::this_thread::get_id() == worker, "app enumeration runs on the engine worker");
@@ -814,7 +831,8 @@ int runCommandTests() {
         const auto failed = ask("/relay Rescan Apps");
         check(!run(failed).empty(), "scan failure reports an action error");
         failScan = false;
-        check(run(failed).empty() && ask("").view.rows[0].title == "New App" && pluginLoads == 1,
+        check(run(failed).empty() && run(failed).empty(), "successful scan leaves the same displayed action executable again");
+        check(ask("").view.rows[0].title == "New App" && pluginLoads == 1,
             "retrying a failed scan replaces apps without reloading plugins");
         check(run(ask("/probe ")) == "2", "rescan preserves plugin state");
         failScan = true;

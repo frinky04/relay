@@ -42,13 +42,13 @@ command::Command relayCommand(std::filesystem::path config, std::filesystem::pat
     }, label});
     cmd.verbs.push_back({"Check for Updates", false, [checkUpdates = std::move(checkUpdates)](auto&) {
         return checkUpdates();
-    }, "Check for a new release and download it in the background", true});
+    }, "Check for a new release and download it in the background", true, true});
     cmd.verbs.push_back({"Restart to Update", false, [restartToUpdate = std::move(restartToUpdate)](auto&) {
         return restartToUpdate();
     }, "Apply the downloaded update and restart Relay"});
     cmd.verbs.push_back({"Rescan Apps", false, [rescanApps = std::move(rescanApps)](auto&) {
         return rescanApps();
-    }, "Refresh installed apps while keeping launch history"});
+    }, "Refresh installed apps while keeping launch history", false, true});
     cmd.verbs.push_back({"Quit", false, [quit = std::move(quit)](auto&) {
         return quit();
     }, "Exit Relay; launch it again to use the hotkey"});

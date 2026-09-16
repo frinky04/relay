@@ -96,13 +96,10 @@ void Engine::work(Loader loader, PluginLoader plugins, const std::function<void(
                     const auto activeApp = std::find_if(commands.begin(), commands.end(), [](auto& cmd) { return cmd.name == "app"; });
                     if (nativeApp == native.end() || activeApp == commands.end())
                         throw std::runtime_error("App command unavailable");
-                    // Build both replacements before releasing the displayed actions.
-                    // Other commands, especially their Lua state, stay in place.
-                    current = {};
-                    evaluated = 0;
+                    // Displayed actions own their callbacks. Keep this evaluation
+                    // usable while future queries see the new app catalog.
                     *nativeApp = std::move(nativeCopy);
                     *activeApp = std::move(app);
-                    reloaded = true;
                 } catch (...) {
                     error = "Cannot rescan apps; try /relay Rescan Apps again";
                 }

@@ -25,6 +25,7 @@ struct Verb {
     Run run;
     std::string help;
     bool updateCheck = false; // native update status stays on this action row
+    bool preserveInput = false; // native action keeps the current menu after success
 };
 struct Preview { std::string title, error; };
 struct Command {
@@ -46,8 +47,8 @@ struct View {
 struct Evaluation {
     std::vector<std::shared_ptr<Command>> snapshots; // own materialized dynamic choices and their verbs
     View view;
-    // Kept on the worker. The catalog must outlive its evaluations and remain
-    // unchanged. The UI receives only View, never plugin callbacks.
+    // Own their bound callbacks on the worker, including across app rescans.
+    // The UI receives only View, never plugin callbacks.
     std::vector<std::function<std::string()>> actions;
 };
 
