@@ -1,4 +1,5 @@
 #pragma once
+#include "hotkey.h"
 #include <windows.h>
 #include <filesystem>
 #include <string>
@@ -7,8 +8,7 @@
 // supplies defaults, validation and the generated comment reference.
 struct Config {
     Config();
-    UINT hotkeyMods = 0;
-    UINT hotkeyVk = 0;
+    HotkeyBinding hotkey;
     std::string hotkeyText;
     float width;
     int maxRows;
@@ -22,5 +22,4 @@ struct Config {
     // false with a recovery message. Loading itself never writes the file.
     bool load(std::string& err);
     bool load(const std::filesystem::path& file, std::string& err);
-    static bool parseHotkey(const std::string& s, UINT& mods, UINT& vk);
 };

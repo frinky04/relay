@@ -33,10 +33,62 @@ int runSupportTests() {
     check(fuzzy::score("CHR", "chrome") == fuzzy::score("chr", "chrome"), "matching ignores ASCII case");
     check(fuzzy::score("chrome", "chrome") > fuzzy::score("chr", "Google Chrome"), "exact names outrank partial names");
 
-    UINT mods = 0, key = 0;
-    check(Config::parseHotkey("alt+space", mods, key) && mods == MOD_ALT && key == VK_SPACE, "default hotkey");
-    check(Config::parseHotkey(" Ctrl + Shift + F12 ", mods, key) && mods == (MOD_CONTROL | MOD_SHIFT) && key == VK_F12, "configured hotkey");
-    check(!Config::parseHotkey("alt+unknown", mods, key), "invalid hotkey is rejected");
+    using Kind = HotkeyBinding::Kind;
+    check(HotkeyBinding::parse("alt+space") == HotkeyBinding{Kind::Shortcut, MOD_ALT, VK_SPACE}, "default hotkey");
+    check(HotkeyBinding::parse(" Ctrl + Shift + F12 ") == HotkeyBinding{Kind::Shortcut, MOD_CONTROL | MOD_SHIFT, VK_F12}, "configured hotkey");
+    check(HotkeyBinding::parse(" WIN ") == HotkeyBinding{Kind::WinTap} &&
+        HotkeyBinding::parse("super") == HotkeyBinding{Kind::WinTap}, "bare Win aliases select a tap binding");
+    check(HotkeyBinding::parse("win+space") == HotkeyBinding{Kind::Shortcut, MOD_WIN, VK_SPACE} &&
+        HotkeyBinding::parse("control+super+f24") == HotkeyBinding{Kind::Shortcut, MOD_CONTROL | MOD_WIN, VK_F24},
+        "Win chords keep native shortcut semantics");
+    for (const auto* invalid : {"", "alt+unknown", "alt", "ctrl+win", "win+", "+space", "alt++space",
+            "ctrl+control+a", "a+b", "win+win", "f0", "f25", "f12oops"})
+        check(!HotkeyBinding::parse(invalid), "malformed or ambiguous hotkeys are rejected");
+
+    for (UINT win : {VK_LWIN, VK_RWIN}) {
+        WinKeyTap tap;
+        check(!tap.key(win, false), "unmatched Win release does not activate");
+        check(!tap.key(win, true) && !tap.key(win, true) && tap.key(win, false) && !tap.key(win, false),
+            "either Win key activates exactly once on release, including autorepeat");
+        for (UINT other : {UINT('E'), UINT('L'), UINT(VK_TAB), UINT(VK_LSHIFT), UINT(VK_LCONTROL), UINT(VK_LMENU)}) {
+            tap.reset();
+            tap.key(win, true);
+            tap.key(other, true);
+            tap.key(other, false);
+            tap.key(win, true);
+            check(!tap.key(win, false), "a chord stays cancelled after the other key releases and Win repeats");
+            tap.reset();
+            tap.key(other, true);
+            tap.key(win, true);
+            tap.key(other, false);
+            check(!tap.key(win, false), "a key held before Win prevents a standalone tap");
+            tap.reset();
+            tap.key(win, true);
+            tap.key(other, true);
+            check(!tap.key(win, false), "releasing Win before the chord key does not activate");
+        }
+        tap.reset();
+        tap.key(win, true, true);
+        check(!tap.key(win, false, true), "injected Win taps do not activate Relay");
+        tap.key(win, true);
+        tap.key('A', true, true);
+        tap.key('A', false, true);
+        check(!tap.key(win, false), "foreign injected keys cancel a physical Win tap");
+        WinKeyTap::Keys held{};
+        held[win] = true;
+        tap.reset(held);
+        tap.key(win, true);
+        check(!tap.key(win, false), "installing or reloading while Win is held does not activate");
+        tap.key(win, true);
+        tap.key('L', true);
+        tap.reset(); // fresh physical state after returning from the lock screen
+        tap.key(win, true);
+        check(tap.key(win, false), "a fresh tap works after missed releases on another desktop");
+    }
+    WinKeyTap both;
+    both.key(VK_LWIN, true);
+    both.key(VK_RWIN, true);
+    check(!both.key(VK_LWIN, false) && !both.key(VK_RWIN, false), "holding both Win keys does not activate");
 
     NoticeStore notices;
     for (unsigned long long i = 0; i < 25; ++i) notices.push({ "Notice", "Body", i });

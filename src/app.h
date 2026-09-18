@@ -54,6 +54,7 @@ private:
 
     // --- UI state
     Config m_config;
+    Hotkey m_hotkey;
     DirWatcher m_watcher;
     using Notice = NoticeStore::Notice;
     NoticeStore m_notices;

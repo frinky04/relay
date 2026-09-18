@@ -30,8 +30,7 @@ std::string read(const fs::path& path) {
 }
 
 bool same(const Config& left, const Config& right) {
-    return left.hotkeyText == right.hotkeyText && left.hotkeyMods == right.hotkeyMods &&
-        left.hotkeyVk == right.hotkeyVk && left.width == right.width &&
+    return left.hotkeyText == right.hotkeyText && left.hotkey == right.hotkey && left.width == right.width &&
         left.maxRows == right.maxRows && left.startWithWindows == right.startWithWindows;
 }
 }
@@ -76,8 +75,15 @@ int runConfigTests() {
     check(Config::refreshReference(path).empty() && read(path) == reference + userLua && read(backup) == userLua,
         "refresh preserves custom Lua byte for byte and backs up the original");
     check(config.load(path, error) && config.width == 800 && config.maxRows == 12 && config.startWithWindows &&
-        config.hotkeyMods == (MOD_CONTROL | MOD_SHIFT) && config.hotkeyVk == VK_F12,
+        config.hotkey == HotkeyBinding{HotkeyBinding::Kind::Shortcut, MOD_CONTROL | MOD_SHIFT, VK_F12},
         "computed overrides and configured hotkey still apply");
+
+    write(path, "return { hotkey = 'win' }");
+    check(config.load(path, error) && config.hotkey.kind == HotkeyBinding::Kind::WinTap,
+        "bare Win loads as a tap binding rather than an incomplete shortcut");
+    write(path, "return { hotkey = 'win+space' }");
+    check(config.load(path, error) && config.hotkey == HotkeyBinding{HotkeyBinding::Kind::Shortcut, MOD_WIN, VK_SPACE},
+        "Win remains a modifier in a shortcut");
 
     const std::string stale = "-- BEGIN RELAY SETTINGS\n-- obsolete = true\n-- END RELAY SETTINGS\n";
     const std::string prefix = "-- Personal heading\n\n";

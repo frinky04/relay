@@ -32,6 +32,7 @@ static constexpr UINT WM_APP_CONFIG = WM_APP + 2;  // lParam: ConfigUpdate*
 static constexpr UINT WM_APP_ENGINE = WM_APP + 3;
 static constexpr UINT WM_APP_QUIT = WM_APP + 4;
 static constexpr UINT WM_APP_UPDATE_NOTICE = WM_APP + 5;
+static constexpr UINT WM_APP_HOTKEY = WM_APP + 6;
 static constexpr unsigned long long PEEK_MS = 4000;
 
 struct ConfigUpdate {
@@ -56,7 +57,14 @@ LRESULT App::handle(UINT m, WPARAM w, LPARAM l) {
     if (ImGui_ImplWin32_WndProcHandler(m_hwnd, m, w, l)) return 1;
     switch (m) {
     case WM_HOTKEY:
+        // A second Relay process uses this message to toggle the existing one.
         if (w == HOTKEY_ID) toggle();
+        return 0;
+    case WM_APP_HOTKEY:
+        if (m_hotkey.accepts(w)) {
+            if (!l) toggle();
+            else onNotice({ "Hotkey blocked", "Windows blocked the Win tap; focus a non-elevated app or set hotkey to alt+space and save init.lua", GetTickCount64() });
+        }
         return 0;
     case WM_ACTIVATE:
         if (LOWORD(w) == WA_INACTIVE && m_visible && !m_peeking &&
@@ -235,14 +243,12 @@ void App::startWatcher() {
 }
 
 void App::registerHotkey() {
-    UnregisterHotKey(m_hwnd, HOTKEY_ID);
-    if (!RegisterHotKey(m_hwnd, HOTKEY_ID, m_config.hotkeyMods | MOD_NOREPEAT, m_config.hotkeyVk)) {
-        onNotice({ "Hotkey unavailable", "Unable to register " + m_config.hotkeyText + "; close the app that uses it, then save init.lua or restart Relay", GetTickCount64() });
-    }
+    if (auto error = m_hotkey.start(m_config.hotkey, m_hwnd, WM_APP_HOTKEY); !error.empty())
+        onNotice({ "Hotkey unavailable", std::move(error), GetTickCount64() });
 }
 
 void App::shutdown() {
-    UnregisterHotKey(m_hwnd, HOTKEY_ID);
+    m_hotkey.stop();
     m_watcher.stop();
     m_engine.stop();
     m_updates.stop();

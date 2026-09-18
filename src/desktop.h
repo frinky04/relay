@@ -12,7 +12,7 @@ namespace desktop {
 
 struct AppEntry {
     std::string name;
-    std::string parsing; // shell:AppsFolder target; also an icon cache key
+    std::string parsing; // shell:AppsFolder target or shortcut path; also an icon cache key
 };
 
 struct WindowTarget {
@@ -40,6 +40,8 @@ struct ProcessEntry {
 };
 
 std::vector<AppEntry> listApps();
+// Explicit folders allow headless checks without reading the user's desktop.
+void appendDesktopApps(std::vector<AppEntry>& apps, const std::vector<std::filesystem::path>& folders);
 enum class AppAction { Open, Admin, FileLocation, CopyPath };
 std::string runApp(const std::string& parsing, AppAction action,
     const std::function<std::string(const std::string&)>& copy);

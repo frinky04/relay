@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <powrprof.h>
 #include <reason.h>
+#include <optional>
 
 using Microsoft::WRL::ComPtr;
 
@@ -141,6 +142,79 @@ std::string setStartup(bool enabled) {
     return writeStartupShortcut(shortcut, target, enabled);
 }
 
+namespace {
+struct LaunchSettings {
+    std::wstring target, arguments, directory;
+    int show = 0;
+    DWORD flags = 0;
+    bool operator==(const LaunchSettings&) const = default;
+};
+
+std::wstring pathKey(const std::filesystem::path& path) {
+    auto value = path.lexically_normal().wstring();
+    CharLowerBuffW(value.data(), static_cast<DWORD>(value.size()));
+    return value;
+}
+
+std::optional<LaunchSettings> launchSettings(const std::string& parsing) {
+    ComPtr<IShellLinkW> link;
+    if (parsing.starts_with("shell:")) {
+        ComPtr<IShellItem> item;
+        if (FAILED(SHCreateItemFromParsingName(widen(parsing).c_str(), nullptr, IID_PPV_ARGS(&item))) ||
+            FAILED(item->BindToHandler(nullptr, BHID_SFUIObject, IID_PPV_ARGS(&link)))) return {};
+    } else {
+        ComPtr<IPersistFile> file;
+        if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+            FAILED(link.As(&file)) || FAILED(file->Load(widen(parsing).c_str(), STGM_READ))) return {};
+    }
+    // Read saved settings only: Resolve can search for moved targets or show UI.
+    wchar_t target[MAX_PATH]{}, directory[MAX_PATH]{};
+    std::wstring arguments(32768, L'\0');
+    LaunchSettings settings;
+    ComPtr<IShellLinkDataList> data;
+    if (link->GetPath(target, MAX_PATH, nullptr, 0) != S_OK || !target[0] ||
+        FAILED(link->GetArguments(arguments.data(), static_cast<int>(arguments.size()))) ||
+        FAILED(link->GetWorkingDirectory(directory, MAX_PATH)) || FAILED(link->GetShowCmd(&settings.show)) ||
+        FAILED(link.As(&data)) || FAILED(data->GetFlags(&settings.flags))) return {};
+    std::filesystem::path path(target);
+    std::error_code ec;
+    const auto extension = pathKey(path.extension());
+    if (!path.is_absolute() || (extension != L".exe" && extension != L".com") ||
+        !std::filesystem::is_regular_file(path, ec)) return {};
+    settings.target = pathKey(path);
+    arguments.resize(wcslen(arguments.c_str()));
+    settings.arguments = std::move(arguments);
+    settings.directory = pathKey(directory);
+    // Storage details (ID lists, icon locations, etc.) do not change launch behavior.
+    settings.flags &= SLDF_RUNAS_USER | SLDF_RUN_IN_SEPARATE;
+    return settings;
+}
+}
+
+void appendDesktopApps(std::vector<AppEntry>& apps, const std::vector<std::filesystem::path>& folders) {
+    Apartment apartment;
+    if (FAILED(apartment.result)) throw std::runtime_error("Cannot read desktop apps; restart Relay");
+    std::vector<LaunchSettings> known;
+    for (const auto& app : apps)
+        if (auto settings = launchSettings(app.parsing)) known.push_back(std::move(*settings));
+    for (const auto& folder : folders) {
+        std::error_code ec;
+        std::vector<std::filesystem::path> shortcuts;
+        for (std::filesystem::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+            if (pathKey(it->path().extension()) == L".lnk" && it->is_regular_file(ec))
+                shortcuts.push_back(it->path());
+        }
+        std::sort(shortcuts.begin(), shortcuts.end());
+        for (const auto& shortcut : shortcuts) {
+            const auto parsing = narrow(shortcut.wstring());
+            auto settings = launchSettings(parsing);
+            if (!settings || std::find(known.begin(), known.end(), *settings) != known.end()) continue;
+            known.push_back(std::move(*settings));
+            apps.push_back({narrow(shortcut.stem().wstring()), parsing});
+        }
+    }
+}
+
 std::vector<AppEntry> listApps() {
     std::vector<AppEntry> out;
     Apartment apartment;
@@ -167,6 +241,13 @@ std::vector<AppEntry> listApps() {
             if (FAILED(next)) throw std::runtime_error("Cannot finish listing installed apps; run /relay Rescan Apps again");
         } else throw std::runtime_error("Cannot list installed apps; restart Relay");
     } else throw std::runtime_error("Cannot access installed apps; restart Relay");
+    std::vector<std::filesystem::path> desktops;
+    for (const auto& id : {FOLDERID_Desktop, FOLDERID_PublicDesktop}) {
+        PWSTR path = nullptr;
+        if (SUCCEEDED(SHGetKnownFolderPath(id, KF_FLAG_DEFAULT, nullptr, &path))) desktops.emplace_back(path);
+        CoTaskMemFree(path);
+    }
+    appendDesktopApps(out, desktops);
     std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return fuzzy::lower(a.name) < fuzzy::lower(b.name); });
     return out;
 }

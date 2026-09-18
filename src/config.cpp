@@ -1,9 +1,7 @@
 #include "config.h"
 #include "util.h"
 #include <sol/sol.hpp>
-#include "fuzzy.h"
 #include <algorithm>
-#include <cctype>
 #include <array>
 #include <cmath>
 #include <charconv>
@@ -83,16 +81,15 @@ Setting setting(const char* name, T Config::* member, T value, std::string help,
 }
 
 std::string validateHotkey(const std::string& value) {
-    UINT mods, key;
-    return Config::parseHotkey(value, mods, key) ? "" :
-        "Hotkey not understood: " + value + "; use a key combination such as Alt+Space";
+    return HotkeyBinding::parse(value) ? "" :
+        "Hotkey not understood: " + value + "; use win or a shortcut such as alt+space, then save init.lua";
 }
 
 // Add settings here. Their type follows the member; the same default and limits
 // drive construction, loading and the reference written into init.lua.
 const auto& settings() {
     static const std::array catalogue{
-        setting<std::string>("hotkey", &Config::hotkeyText, "alt+space", "Shortcut to open or hide Relay", {}, validateHotkey),
+        setting<std::string>("hotkey", &Config::hotkeyText, "alt+space", "Shortcut to open or hide Relay; win replaces the Start menu on a standalone Win tap", {}, validateHotkey),
         setting<float>("width", &Config::width, 640.0f, "Window width", std::pair{320.0f, 1600.0f}),
         setting<int>("max_rows", &Config::maxRows, 9, "Visible rows", std::pair{1, 30}),
         setting<bool>("start_with_windows", &Config::startWithWindows, false, "Start hidden when you sign in"),
@@ -103,7 +100,7 @@ const auto& settings() {
 
 Config::Config() {
     for (const auto& setting : settings()) setting.reset(*this);
-    parseHotkey(hotkeyText, hotkeyMods, hotkeyVk);
+    hotkey = *HotkeyBinding::parse(hotkeyText);
 }
 
 std::string Config::reference() {
@@ -117,36 +114,6 @@ std::string Config::reference() {
 }
 
 fs::path Config::path() { return fs::path(dataDir()) / L"init.lua"; }
-
-bool Config::parseHotkey(const std::string& s, UINT& mods, UINT& vk) {
-    mods = 0; vk = 0;
-    std::string cur;
-    auto apply = [&](std::string tok) -> bool {
-        tok = fuzzy::lower(tok);
-        if (tok == "ctrl" || tok == "control") { mods |= MOD_CONTROL; return true; }
-        if (tok == "alt")   { mods |= MOD_ALT; return true; }
-        if (tok == "shift") { mods |= MOD_SHIFT; return true; }
-        if (tok == "win" || tok == "super") { mods |= MOD_WIN; return true; }
-        if (tok == "space") { vk = VK_SPACE; return true; }
-        if (tok == "tab")   { vk = VK_TAB; return true; }
-        if (tok == "enter" || tok == "return") { vk = VK_RETURN; return true; }
-        if (tok == "esc" || tok == "escape") { vk = VK_ESCAPE; return true; }
-        if (tok == "`" || tok == "grave" || tok == "backtick") { vk = VK_OEM_3; return true; }
-        if (tok.size() == 1 && std::isalnum((unsigned char)tok[0])) { vk = (UINT)std::toupper((unsigned char)tok[0]); return true; }
-        if (tok.size() >= 2 && tok[0] == 'f' && std::isdigit((unsigned char)tok[1])) {
-            int n = std::atoi(tok.c_str() + 1);
-            if (n >= 1 && n <= 24) { vk = VK_F1 + n - 1; return true; }
-        }
-        return false;
-    };
-    for (size_t i = 0; i <= s.size(); ++i) {
-        if (i == s.size() || s[i] == '+') {
-            if (!cur.empty() && !apply(cur)) return false;
-            cur.clear();
-        } else if (!std::isspace((unsigned char)s[i])) cur += s[i];
-    }
-    return vk != 0;
-}
 
 bool Config::load(std::string& err) {
     return load(path(), err);
@@ -172,6 +139,6 @@ bool Config::load(const fs::path& file, std::string& err) {
         const auto error = setting.apply(*this, t[setting.name]);
         if (err.empty()) err = error;
     }
-    parseHotkey(hotkeyText, hotkeyMods, hotkeyVk);
+    hotkey = *HotkeyBinding::parse(hotkeyText);
     return err.empty();
 }

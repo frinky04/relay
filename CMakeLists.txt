@@ -11,6 +11,7 @@ include(cmake/Velopack.cmake)
 
 add_library(relay_core STATIC
   src/config.cpp
+  src/hotkey.cpp
   src/config_reference.cpp
   src/watcher.cpp
   src/fuzzy.cpp

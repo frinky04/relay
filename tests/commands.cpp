@@ -14,6 +14,9 @@
 #include <future>
 #include <stdexcept>
 #include <algorithm>
+#include "util.h"
+#include <shobjidl.h>
+#include <wrl/client.h>
 
 using namespace std::chrono_literals;
 static int failures = 0;
@@ -45,6 +48,53 @@ struct Signal {
 };
 
 int runCommandTests() {
+    {
+        namespace fs = std::filesystem;
+        using Microsoft::WRL::ComPtr;
+        const auto root = fs::temp_directory_path() / ("relay-desktop-" + std::to_string(GetCurrentProcessId()));
+        fs::create_directories(root / "user" / "nested");
+        fs::create_directories(root / "public");
+        std::ofstream(root / "fake.exe") << "fake app; never executed";
+        std::ofstream(root / "document.txt") << "document";
+        const auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+        check(SUCCEEDED(initialized), "initialize shortcut fixtures");
+        auto shortcut = [&](const fs::path& path, const fs::path& target,
+                const wchar_t* arguments = L"", const wchar_t* directory = L"", int show = SW_SHOWNORMAL) {
+            ComPtr<IShellLinkW> link;
+            ComPtr<IPersistFile> file;
+            const bool ok = SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) &&
+                SUCCEEDED(link->SetPath(target.c_str())) && SUCCEEDED(link->SetArguments(arguments)) &&
+                SUCCEEDED(link->SetWorkingDirectory(directory)) && SUCCEEDED(link->SetShowCmd(show)) &&
+                SUCCEEDED(link.As(&file)) && SUCCEEDED(file->Save(path.c_str(), TRUE));
+            check(ok, "write shortcut fixture");
+        };
+        shortcut(root / "installed.lnk", root / "fake.exe");
+        shortcut(root / "user" / "Duplicate.lnk", root / "fake.exe");
+        shortcut(root / "user" / "Profile.lnk", root / "fake.exe", L"--profile Work");
+        shortcut(root / "public" / "Profile duplicate.lnk", root / "fake.exe", L"--profile Work");
+        shortcut(root / "user" / "Directory.lnk", root / "fake.exe", L"", root.c_str());
+        shortcut(root / "user" / "Minimized.LNK", root / "fake.exe", L"", L"", SW_SHOWMINNOACTIVE);
+        shortcut(root / "user" / "Broken.lnk", root / "missing.exe");
+        shortcut(root / "user" / "Document.lnk", root / "document.txt");
+        shortcut(root / "user" / "Folder.lnk", root);
+        shortcut(root / "user" / "nested" / "Nested.lnk", root / "fake.exe", L"--nested");
+        std::ofstream(root / "user" / "Corrupt.lnk") << "invalid";
+        std::ofstream(root / "user" / "Website.url") << "[InternetShortcut]\nURL=https://example.com";
+        std::vector<desktop::AppEntry> apps{{"Installed", narrow((root / "installed.lnk").wstring())}};
+        desktop::appendDesktopApps(apps, {root / "user", root / "public", root / "absent"});
+        check(apps.size() == 4, "desktop scan filters non-apps, skips nested folders and merges equivalent launch settings");
+        auto profile = std::find_if(apps.begin(), apps.end(), [](const auto& app) { return app.name == "Profile"; });
+        check(profile != apps.end() && profile->parsing == narrow((root / "user" / "Profile.lnk").wstring()),
+            "desktop app retains original shortcut for launch and icon retrieval");
+        std::string copied;
+        check(desktop::runApp(narrow((root / "user" / "Profile.lnk").wstring()), desktop::AppAction::CopyPath,
+            [&](const std::string& value) { copied = value; return std::string{}; }).empty() &&
+            copied == narrow((root / "fake.exe").wstring()), "shortcut Copy Path uses target with a fake clipboard");
+        desktop::appendDesktopApps(apps, {root / "user", root / "public"});
+        check(apps.size() == 4, "repeated desktop scans do not duplicate apps");
+        if (SUCCEEDED(initialized)) CoUninitialize();
+        fs::remove_all(root);
+    }
     {
         using Action = desktop::SystemAction;
         bool hibernate = true;

@@ -10,6 +10,8 @@ Download the [latest release](https://github.com/frinky04/relay/releases/latest)
 
 Press **Alt+Space**, type an app name, and press **Enter** to open it.
 
+Relay finds installed apps and application shortcuts on your desktop. Run `/relay Rescan Apps` after adding or changing shortcuts.
+
 Type `/` to list commands. Use **Up/Down** to select a result and **Tab** to complete it. **Shift+Enter** runs the selection and keeps Relay open. **Escape** hides Relay; `/relay Quit` exits it.
 
 | Type | Action |
@@ -37,6 +39,8 @@ Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave of
 ## Settings and plugins
 
 Run `/relay Edit Config` to open settings. The file includes examples; save your changes to apply them.
+
+Set `hotkey = "win"` in the returned settings table to open or hide Relay by tapping either Windows key instead of opening Start. Win shortcuts such as Win+E and Win+L keep their normal behavior. Exit Relay or restore `hotkey = "alt+space"` to restore normal Win taps.
 
 To add Lua commands, run `/relay Open Plugins Folder` and place your files there. Run `/relay Reload Plugins` after editing them. See the [bundled web command](plugins/web.lua) for examples.
 
