@@ -1,6 +1,7 @@
 #include "calculator_command.h"
 #include "calculator.h"
 #include <algorithm>
+#include <cmath>
 
 namespace {
 command::Preview preview(const std::string &text, const command::Context &context, const std::string &action,
@@ -21,13 +22,20 @@ command::Preview preview(const std::string &text, const command::Context &contex
     out.title = found->title;
     out.subtitle = found->subtitle;
     out.stacked = true;
+    if (action == "Copy") {
+        if (const auto* color = std::get_if<calculator::Color>(&*result.value)) {
+            auto byte = [](double channel) { return uint32_t(std::round(std::clamp(channel, 0., 1.) * 255)); };
+            out.colorSwatch = (byte(color->red) << 24) | (byte(color->green) << 16) |
+                              (byte(color->blue) << 8) | byte(color->alpha);
+        }
+    }
     out.action = [copy, value = found->copy] { return copy(value); };
     return out;
 }
 } // namespace
 
 command::Command calculatorCommand(std::function<std::string(const std::string &)> copy) {
-    command::Command cmd{"calc", "Calculate numbers, units, dates and times"};
+    command::Command cmd{"calc", "Calculate numbers, bases, colors, units, dates and times"};
     command::Argument expression{"Expression"};
     expression.rest = true;
     cmd.args.push_back(std::move(expression));
@@ -39,7 +47,7 @@ command::Command calculatorCommand(std::function<std::string(const std::string &
     };
     cmd.preview = [copy](const auto &args, const auto &context) { return preview(args[0], context, "Copy", copy); };
     for (const auto *name : {"Copy", "Copy Discord", "Copy Discord Relative", "Copy ISO", "Copy Unix", "Copy Full Date",
-                             "Copy ISO Week"}) {
+                             "Copy ISO Week", "Copy Binary", "Copy Octal", "Copy Decimal", "Copy Hex", "Copy RGB", "Copy HSL"}) {
         command::Verb verb;
         verb.name = name;
         verb.preview = [copy, action = verb.name](const auto &args, const auto &context) {

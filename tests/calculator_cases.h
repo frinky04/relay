@@ -179,7 +179,6 @@ const ErrorCase mathErrors[] = {
     {"2 % 3", "syntax", 0},
     {"2+3 garbage", "name", 0},
     {"pi2", "name", 0},
-    {"0xff", "name", 0},
     {"x=3", "character", 0},
     {"1;2", "character", 0},
     {"[1,2]", "character", 0},

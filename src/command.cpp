@@ -131,6 +131,7 @@ void showVerbs(Evaluation& out, const Command& cmd, const std::vector<std::strin
         row.title = display.title.empty() ? verb->name : display.title;
         row.subtitle = display.subtitle.empty() ? (verb->help.empty() ? cmd.help : verb->help) : display.subtitle;
         row.stacked = display.stacked;
+        row.colorSwatch = display.colorSwatch;
         if (!display.title.empty() && !row.stacked) row.subtitle = verb->name + " — " + row.subtitle;
         row.kind = display.title.empty() ? "Verb" : "Result";
         add(out, std::move(row), verb, args, std::move(display.action));

@@ -8,6 +8,8 @@
 //   BORDER vs BG 1.44, BG_SELECTED vs BG 1.21
 // Detail rows: primary title uses TEXT on BG (15.02) / BG_SELECTED (12.43);
 // secondary line uses TEXT_2 on BG (7.36) / BG_SELECTED (6.09), at FONT_SIZE_SM.
+// Color swatches occupy the icon gutter and carry no text. Their checker uses
+// BG_INPUT/BORDER and their outline uses TEXT_MUTED; all text/background pairs stay as above.
 #include "theme.h"
 
 namespace theme {

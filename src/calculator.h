@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -10,6 +11,13 @@ namespace calculator {
 struct Scalar {
     double value = 0;
     bool percentage = false;
+};
+struct Integer {
+    uint64_t magnitude = 0;
+    bool negative = false;
+};
+struct Color {
+    double red = 0, green = 0, blue = 0, alpha = 1; // sRGB channels in [0, 1]
 };
 struct Unit {
     std::string symbol, dimension;
@@ -29,7 +37,7 @@ struct Duration {
     int64_t seconds = 0;
     bool calendarDays = false;
 };
-using Value = std::variant<Scalar, Quantity, Date, Instant, Duration>;
+using Value = std::variant<Scalar, Integer, Color, Quantity, Date, Instant, Duration>;
 struct Error {
     std::string code, message;
     size_t position = 0;
@@ -60,5 +68,9 @@ std::string clean(std::string_view text);
 // Calendar parsing receives lowercase text with collapsed ASCII whitespace.
 bool temporalForm(const std::string &text);
 Result datetime(std::string text, int64_t reference);
+bool baseForm(const std::string &text);
+Result bases(std::string_view text);
+bool colorForm(const std::string &text);
+Result colors(const std::string &text);
 } // namespace detail
 } // namespace calculator

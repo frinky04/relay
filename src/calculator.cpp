@@ -360,10 +360,15 @@ Result evaluate(std::string_view text, int64_t reference) {
         if (text.size() > 1024) fail("input", "Use an expression of at most 1024 bytes");
         auto display = clean(text);
         auto normalized = lower(display);
+        if (colorForm(normalized)) {
+            if (text.size() > 256) fail("input", "Use a color expression of at most 256 bytes");
+            return colors(normalized);
+        }
         if (temporalForm(normalized)) {
             if (text.size() > 256) fail("input", "Use a date/time expression of at most 256 bytes");
             return datetime(std::move(normalized), reference);
         }
+        if (baseForm(normalized)) return bases(text);
         MathParser parser(text);
         const auto n = parser.parse();
         Result result;

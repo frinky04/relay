@@ -1,5 +1,7 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <functional>
 #include <string>
 
@@ -36,4 +38,5 @@ struct MenuRow {
     // UI event handler; stayOpen records Shift+Enter. Only short UI operations
     // belong here. Command execution dispatches off the UI thread.
     std::function<void(bool stayOpen)> activate;
+    std::optional<uint32_t> colorSwatch; // content sample, packed 0xRRGGBBAA; no text overlays
 };

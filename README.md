@@ -17,6 +17,8 @@ Type `/` to list commands. Use **Up/Down** to select a result and **Tab** to com
 | `/window code` | Find and switch to an open window |
 | `/web lua documentation` | Search the web |
 | `5 + 5` | Calculate; Enter copies the result |
+| `255 to hex` | Convert exact integers between binary, octal, decimal and hexadecimal |
+| `#ff8800 to rgb` | Convert colors between HEX, RGB and HSL, including alpha |
 | `10 ft in cm` | Convert units; compatible quantities support arithmetic |
 | `tomorrow at 7pm` | Preview a date and time; Enter copies it |
 | `days until 25 Dec` | Count calendar days |
@@ -26,7 +28,7 @@ Type `/` to list commands. Use **Up/Down** to select a result and **Tab** to com
 
 Commands follow **noun, arguments, verb**: `/app "Google Chrome" Open`. Leave off the verb to use the default action.
 
-`/calc <expression>` handles numbers, units, dates and times. Use `/calc now` for the current time and alternate copy formats. Select formats from the results; the expression consumes the remaining input.
+`/calc <expression>` handles numbers, bases, colors, units, dates and times. Base arithmetic uses prefixes such as `0b1010 + 5`; colors use `#`, `rgb(...)` or `hsl(...)`. Use `/calc` to select alternate copy formats, or `/calc now` for the current time. Select formats from the results; the expression consumes the remaining input.
 
 **Kill requires two Enter presses and discards unsaved work.**
 

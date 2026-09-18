@@ -27,6 +27,8 @@ add_library(relay_core STATIC
   src/lua_commands.cpp
   src/calculator.cpp
   src/calculator_units.cpp
+  src/calculator_bases.cpp
+  src/calculator_colors.cpp
   src/calculator_datetime.cpp
   src/calculator_command.cpp
   src/desktop.cpp
@@ -70,6 +72,7 @@ add_executable(relay_test
   tests/watcher.cpp
   tests/commands.cpp
   tests/calculator.cpp
+  tests/calculator_formats.cpp
   tests/datetime.cpp
   tests/frecency.cpp
   tests/updates.cpp

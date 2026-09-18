@@ -81,6 +81,7 @@ std::string repeat(std::string_view text, int count) {
 } // namespace
 
 int runCalculatorTests() {
+    runCalculatorFormatTests();
     for (const auto &c : mathCases) {
         auto actual = scalar(c.text);
         auto tolerance = c.expected == 0 ? 1e-14 : std::abs(c.expected) * 1e-12;

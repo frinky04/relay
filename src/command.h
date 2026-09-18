@@ -14,6 +14,7 @@ struct Preview {
     bool hidden = false;
     std::function<std::string()> action; // optional prepared execution, owned by the evaluation
     bool stacked = false; // explicit detail below the title, with the action in the footer
+    std::optional<uint32_t> colorSwatch; // native color result, packed 0xRRGGBBAA
 };
 struct Choice {
     std::string text, subtitle, iconKey;

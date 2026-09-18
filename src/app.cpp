@@ -904,7 +904,20 @@ void App::drawUi() {
         const float digitAlpha = digit >= 1 && digit <= shortcutCount && !danger ? altAlpha : 0.0f;
 
         // Keep icon loading/reveal advancing under the shortcut crossfade.
-        if (auto* tex = IconCache::instance().get(r.iconKey)) {
+        if (r.colorSwatch) {
+            const float iy = r.stacked ? titleY + (fs - iconSz) * 0.5f : y0 + (rowHeight - iconSz) * 0.5f;
+            const float fade = 1.0f - altAlpha, cell = iconSz * 0.5f;
+            const auto rgba = *r.colorSwatch;
+            // The requested color is content, like an app icon. Chrome retains theme tokens.
+            for (int row = 0; row < 2; ++row) for (int col = 0; col < 2; ++col) {
+                dl->AddRectFilled(ImVec2(padX + col * cell, iy + row * cell),
+                    ImVec2(padX + (col + 1) * cell, iy + (row + 1) * cell),
+                    theme::rgb((row + col) % 2 ? theme::BORDER : theme::BG_INPUT, fade));
+            }
+            dl->AddRectFilled(ImVec2(padX, iy), ImVec2(padX + iconSz, iy + iconSz),
+                theme::rgb(rgba >> 8, (rgba & 0xff) / 255.0f * fade));
+            dl->AddRect(ImVec2(padX, iy), ImVec2(padX + iconSz, iy + iconSz), theme::rgb(theme::TEXT_MUTED, fade));
+        } else if (auto* tex = IconCache::instance().get(r.iconKey)) {
             float a = 1.0f, lift = 0.0f;
             if (m_iconPending.erase(r.iconKey)) m_iconReveal[r.iconKey] = (float)ImGui::GetTime();
             if (auto it = m_iconReveal.find(r.iconKey); it != m_iconReveal.end()) {
