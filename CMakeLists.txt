@@ -27,11 +27,13 @@ add_library(relay_core STATIC
   src/process_command.cpp
   src/system_command.cpp
   src/lua_commands.cpp
-  src/calculator.cpp
-  src/calculator_units.cpp
-  src/calculator_bases.cpp
-  src/calculator_colors.cpp
-  src/calculator_datetime.cpp
+  src/solver.cpp
+  src/solver_math.cpp
+  src/solver_format.cpp
+  src/solver_units.cpp
+  src/solver_bases.cpp
+  src/solver_colors.cpp
+  src/solver_datetime.cpp
   src/calculator_command.cpp
   src/desktop.cpp
   src/updates.cpp

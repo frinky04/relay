@@ -24,6 +24,7 @@ Type `/` to list commands. Use **Up/Down** to select a result, **Page Up/Down** 
 | `255 to hex` | Convert exact integers between binary, octal, decimal and hexadecimal |
 | `#ff8800 to rgb` | Convert colors between HEX, RGB and HSL, including alpha |
 | `10 ft in cm` | Convert units; compatible quantities support arithmetic |
+| `1h30m to minutes` | Convert compound durations; `1yr6mo to months` converts calendar quantities |
 | `tomorrow at 7pm` | Preview a date and time; Enter copies it |
 | `days until 25 Dec` | Count calendar days |
 | `5pm London in Sydney` | Convert timezones using daylight-saving rules |

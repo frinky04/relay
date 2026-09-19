@@ -611,6 +611,7 @@ int runCommandTests() {
         {"sqrt(144)", "12"}, {"SIN(pi/2)", "1"}, {"round(12.345, 2)", "12.35"},
         {"2pi", "6.28318530717959"}, {"2(3)", "6"}, {"(2)(3)", "6"},
         {"5!", "120"}, {"15% of 240", "36"}, {"240 - 15%", "204"},
+        {"1h30m to min", "90 min"}, {"1yr6mo to months", "18 mo"},
         {"1.5e3 / 4", "375"}, {"2^53", "9007199254740992"}, {"log(8, 2)", "3"}}) {
         copied = "untouched";
         auto result = query(expression);
@@ -642,9 +643,21 @@ int runCommandTests() {
     check(query("/calc pi").view.rows[0].title == "3.14159265358979" &&
         query("/calc 1e3").view.rows[0].title == "1000", "explicit calculator accepts constants and scientific literals");
     auto domain = query("/calc sqrt(-1)");
-    check(domain.view.rows[0].subtitle == "At byte 1: Use a nonnegative number for sqrt" && !domain.actions[0],
-        "explicit errors preserve the parser's recovery message and expression byte position");
+    check(domain.view.rows[0].subtitle == "At 'sqrt': Use a nonnegative number for sqrt" && !domain.actions[0],
+        "explicit errors show the original token and recovery instruction");
     check(hint(query("/calc \"5 +").view) == "Close the quote ", "explicit math keeps normal quote rules");
+    for (const auto &expression : {"1year to days", "1h30m to m", "1h to", "1h and", "1h to YAERS"}) {
+        auto bare = query(expression);
+        check(bare.view.rows.empty(), "Invalid duration expressions remain app searches");
+        auto scoped = query(std::string("/calc ") + expression);
+        check(scoped.view.rows.size() == 1 && scoped.view.rows[0].kind == "Error" && !scoped.actions[0] &&
+            scoped.view.rows[0].subtitle.find("At byte") == std::string::npos,
+            "Scoped duration errors retain one recovery row without a copy action");
+    }
+    auto unfinished = query("/calc 1h +");
+    check(unfinished.view.rows[0].subtitle == "Add a value after '+'", "Incomplete expressions explain what to type next");
+    auto misspelled = query("/calc 1h to YAERS");
+    check(misspelled.view.rows[0].subtitle.starts_with("At 'YAERS': Unknown unit"), "Unit errors preserve user spelling");
     for (const auto input : {"/calc 32 + 32", "/calc   32  +  32  ", "/calc \"32 + 32\"", "/calc \"32\n+\t32\""}) {
         auto result = query(input);
         check(result.view.rows.size() == 1 && result.view.rows[0].title == "64" && result.view.rows[0].completion.empty() &&

@@ -1,19 +1,24 @@
-#include "calculator.h"
+#include "solver_internal.h"
 #include <algorithm>
 #include <array>
-#include <charconv>
-#include <cmath>
 #include <ctime>
 #include <format>
 #include <map>
 #include <regex>
 #include <set>
-#include <sstream>
 
-namespace calculator::detail {
+namespace solver::detail {
 namespace {
 using namespace std::chrono;
-using Tokens = std::vector<std::string>;
+struct Tokens {
+    std::vector<PeriodToken> values;
+    Span end;
+    size_t size() const { return values.size(); }
+    bool empty() const { return values.empty(); }
+    const std::string &operator[](size_t i) const { return values[i].text; }
+    void push(std::string word, Span span) { values.push_back({std::move(word), span}); }
+    Span at(size_t i) const { return i < size() ? values[i].span : end; }
+};
 const std::array<std::string, 12> months = {"January", "February", "March",     "April",   "May",      "June",
                                             "July",    "August",   "September", "October", "November", "December"};
 const std::array<std::string, 7> weekdays = {"Monday", "Tuesday",  "Wednesday", "Thursday",
@@ -27,21 +32,25 @@ bool digits(std::string_view s) { return !s.empty() && s.find_first_not_of("0123
 int64_t integer(std::string_view s) {
     if (!digits(s) || s.size() > 12) return -1;
     int64_t n = 0;
-    for (char c : s) n = n * 10 + c - '0';
+    for (char c : s)
+        n = n * 10 + c - '0';
     return n;
 }
 int fractionMilliseconds(std::string_view digits) {
     // Each timestamp grammar validates one to three digits before conversion.
     int value = int(integer(digits));
-    for (size_t i = digits.size(); i < 3; ++i) value *= 10;
+    for (size_t i = digits.size(); i < 3; ++i)
+        value *= 10;
     return value;
 }
 const std::string &token(const Tokens &t, size_t i) {
     static const std::string empty;
     return i < t.size() ? t[i] : empty;
 }
-Tokens tokenize(const std::string &text) {
+Tokens tokenize(const Source &source) {
+    const auto &text = source.text;
     Tokens out;
+    out.end = source.span(text.size());
     static const std::regex word(R"(^([a-z_]+/[a-z0-9_/+\-]+|[0-9]+\.[0-9]+|[0-9]+|[a-z]+|[+,:\-]))");
     for (size_t i = 0; i < text.size();) {
         if (std::isspace(static_cast<unsigned char>(text[i]))) {
@@ -49,8 +58,9 @@ Tokens tokenize(const std::string &text) {
             continue;
         }
         std::match_results<std::string::const_iterator> match;
-        if (!std::regex_search(text.cbegin() + i, text.cend(), match, word)) syntax();
-        out.push_back(match.str());
+        if (!std::regex_search(text.cbegin() + i, text.cend(), match, word))
+            failAt("syntax", "Remove this character; use a date, time or duration", source.span(i));
+        out.push(match.str(), source.span(i, match.length()));
         i += match.length();
     }
     return out;
@@ -96,11 +106,6 @@ Civil fromSeconds(int64_t timestamp) {
 bool sameClock(const Civil &a, const Civil &b) {
     return a.y == b.y && a.m == b.m && a.d == b.d && a.h == b.h && a.min == b.min && a.sec == b.sec;
 }
-std::string offsetLabel(int offset) {
-    auto n = std::abs(offset);
-    return std::format("UTC{}{:02}:{:02}", offset < 0 ? "-" : "+", n / 3600, n / 60 % 60) +
-           (n % 60 ? std::format(":{:02}", n % 60) : "");
-}
 struct Zone {
     std::string name = "local", id;
     int offset = 0;
@@ -114,8 +119,10 @@ const time_zone *findZone(const std::string &name) {
         static const auto names = [] {
             std::map<std::string, std::string> result;
             const auto &db = get_tzdb();
-            for (const auto &z : db.zones) result.emplace(lower(z.name()), z.name());
-            for (const auto &z : db.links) result.emplace(lower(z.name()), z.name());
+            for (const auto &z : db.zones)
+                result.emplace(lower(z.name()), z.name());
+            for (const auto &z : db.links)
+                result.emplace(lower(z.name()), z.name());
             return result;
         }();
         auto found = names.find(lower(name));
@@ -191,7 +198,7 @@ Civil zoneDate(int64_t timestamp, const Zone &zone) {
         check(d);
         d.clock = true;
         d.offset = int(civilSeconds(d) - timestamp);
-        d.label = "Local " + offsetLabel(d.offset);
+        d.label = "Local " + formatOffset(d.offset);
         return d;
     }
     int offset = zone.offset;
@@ -208,10 +215,14 @@ Civil zoneDate(int64_t timestamp, const Zone &zone) {
     }
     auto d = fromSeconds(timestamp + offset);
     d.offset = offset;
-    if (!zone.id.empty()) d.label = zone.name + " (" + abbreviation + ", " + offsetLabel(offset) + ")";
-    else if (zone.us) d.label = zone.name + " (US, " + offsetLabel(offset) + ", fixed)";
-    else if (zone.name == "UTC" || zone.name == offsetLabel(offset)) d.label = zone.name;
-    else d.label = zone.name + " (" + offsetLabel(offset) + ")";
+    if (!zone.id.empty())
+        d.label = zone.name + " (" + abbreviation + ", " + formatOffset(offset) + ")";
+    else if (zone.us)
+        d.label = zone.name + " (US, " + formatOffset(offset) + ", fixed)";
+    else if (zone.name == "UTC" || zone.name == formatOffset(offset))
+        d.label = zone.name;
+    else
+        d.label = zone.name + " (" + formatOffset(offset) + ")";
     return d;
 }
 int64_t zoneTimestamp(const Civil &d, const Zone &zone, std::optional<int64_t> notBefore = {}) {
@@ -222,7 +233,7 @@ int64_t zoneTimestamp(const Civil &d, const Zone &zone, std::optional<int64_t> n
             auto actual = zoneDate(t, zone);
             normalized = true;
             if (sameClock(d, actual)) found.insert(t);
-        } catch (const Error &e) {
+        } catch (const Diagnostic &e) {
             if (e.code != "range") throw;
         }
     };
@@ -239,7 +250,8 @@ int64_t zoneTimestamp(const Civil &d, const Zone &zone, std::optional<int64_t> n
             auto t = _mktime64(&tm);
             if (t != -1) accept(t);
         }
-    } else if (zone.id.empty()) accept(civilSeconds(d) - zone.offset);
+    } else if (zone.id.empty())
+        accept(civilSeconds(d) - zone.offset);
     else {
         try {
             auto info = findZone(zone.id)->get_info(local_seconds{seconds{civilSeconds(d)}});
@@ -259,34 +271,7 @@ int64_t zoneTimestamp(const Civil &d, const Zone &zone, std::optional<int64_t> n
     }
     return *found.begin();
 }
-struct CalendarPeriod {
-    int64_t months = 0, days = 0, seconds = 0;
-    bool hasTime = false; // Even 0s requires an instant rather than a date.
-};
-enum class PeriodField { Seconds, Days, Months };
-struct PeriodUnit {
-    PeriodField field;
-    int scale;
-};
-const std::map<std::string, PeriodUnit> &periodUnits() {
-    static const auto result = [] {
-        std::map<std::string, PeriodUnit> out;
-        auto add = [&](std::string words, PeriodField field, int scale) {
-            std::istringstream in(words);
-            for (std::string word; in >> word;) out[word] = {field, scale};
-        };
-        add("s sec secs second seconds", PeriodField::Seconds, 1);
-        add("m min mins minute minutes", PeriodField::Seconds, 60);
-        add("h hr hrs hour hours", PeriodField::Seconds, 3600);
-        add("d day days", PeriodField::Days, 1);
-        add("w wk wks week weeks", PeriodField::Days, 7);
-        add("mo month months", PeriodField::Months, 1);
-        add("y yr yrs year years", PeriodField::Months, 12);
-        return out;
-    }();
-    return result;
-}
-std::optional<Zone> readZone(const Tokens &t, size_t &i) {
+std::optional<Zone> readZone(const Tokens &t, size_t &i) try {
     if (token(t, i).find('/') != std::string::npos) {
         auto z = findZone(t[i++]);
         return Zone{std::string(z->name()), std::string(z->name())};
@@ -307,7 +292,7 @@ std::optional<Zone> readZone(const Tokens &t, size_t &i) {
     }
     if (!zone) return {};
     if ((zone->name == "UTC" || zone->name == "GMT") && (token(t, i) == "+" || token(t, i) == "-") &&
-        !periodUnits().contains(token(t, i + 2))) {
+        !periodUnit(token(t, i + 2))) {
         int sign = t[i++] == "-" ? -1 : 1;
         auto number = token(t, i++);
         auto hour = integer(number);
@@ -316,7 +301,8 @@ std::optional<Zone> readZone(const Tokens &t, size_t &i) {
         if (number.size() == 4) {
             minute = hour % 100;
             hour /= 100;
-        } else if (number.size() > 2) zoneError();
+        } else if (number.size() > 2)
+            zoneError();
         if (token(t, i) == ":") {
             ++i;
             auto part = token(t, i++);
@@ -331,20 +317,27 @@ std::optional<Zone> readZone(const Tokens &t, size_t &i) {
         }
         if (hour > 14 || minute > 59 || second > 59 || (hour == 14 && (minute || second))) zoneError();
         auto offset = sign * int(hour * 3600 + minute * 60 + second);
-        zone = Zone{offsetLabel(offset), "", offset};
+        zone = Zone{formatOffset(offset), "", offset};
     }
     return zone;
+} catch (Diagnostic error) {
+    if (!error.span) error.span = t.at(i ? i - 1 : 0);
+    throw error;
 }
-Zone destination(const std::string &text) {
+
+Zone destination(const Source &source) {
+    const auto &text = source.text;
     if (text.size() > 64) zoneError();
-    auto t = tokenize(text);
+    auto t = tokenize(source);
     size_t i = 0;
     auto z = readZone(t, i);
-    if (!z || i != t.size()) zoneError();
+    if (!z || i != t.size())
+        failAt("timezone", "Use a supported city, IANA timezone, or numeric offset such as UTC+09:30", t.at(i));
     return *z;
 }
 Zone extractZone(Tokens &tokens) {
     Tokens output;
+    output.end = tokens.end;
     Zone selected;
     bool found = false;
     for (size_t i = 0; i < tokens.size();) {
@@ -358,47 +351,15 @@ Zone extractZone(Tokens &tokens) {
             selected = *zone;
             found = true;
             i = after;
-        } else output.push_back(tokens[i++]);
+        } else {
+            output.values.push_back(std::move(tokens.values[i]));
+            ++i;
+        }
     }
     tokens = std::move(output);
     return selected;
 }
-CalendarPeriod period(const Tokens &t, size_t &i) {
-    CalendarPeriod out;
-    std::set<std::pair<PeriodField, int>> seen;
-    while (i < t.size()) {
-        auto u = periodUnits().find(token(t, i + 1));
-        if (u == periodUnits().end()) break;
-        const auto &spelling = token(t, i);
-        static const std::regex numeric(R"([0-9]+(\.[0-9]+)?)");
-        if (!std::regex_match(spelling, numeric)) break;
-        double n = 0;
-        auto parsed = std::from_chars(spelling.data(), spelling.data() + spelling.size(), n);
-        if (parsed.ec != std::errc{}) fail("duration", "Use a smaller duration");
-        auto [field, scale] = u->second;
-        if (!std::isfinite(n) || n > 4e10) fail("duration", "Use a smaller duration");
-        if (field != PeriodField::Seconds && std::floor(n) != n)
-            fail("duration", "Use whole days, weeks, months and years");
-        if (!seen.emplace(field, scale).second) fail("duration", "Use each duration unit once");
-        double value = n * scale;
-        if (std::abs(value - std::round(value)) > 1e-6)
-            fail("duration", "Use a duration that resolves to whole seconds");
-        auto amount = static_cast<int64_t>(std::round(value));
-        if (field == PeriodField::Seconds) {
-            out.seconds += amount;
-            out.hasTime = true;
-        } else if (field == PeriodField::Days) out.days += amount;
-        else out.months += amount;
-        i += 2;
-        if (token(t, i) == "and" || token(t, i) == ",") {
-            ++i;
-            if (!std::regex_match(token(t, i), numeric) || !periodUnits().contains(token(t, i + 1)))
-                fail("duration", "Add a duration after the separator, such as 1h and 30m");
-        }
-    }
-    if (seen.empty()) fail("duration", "Add a duration such as 8h or 7h30m");
-    return out;
-}
+CalendarPeriod period(const Tokens &t, size_t &i) { return calendarPeriod(readPeriod(t.values, i)); }
 int nameIndex(std::string_view word, bool month) {
     if (month && word == "sept") return 9;
     if (!month && word == "tues") return 2;
@@ -422,7 +383,7 @@ void ordinalSuffix(const Tokens &t, size_t &i, int day) {
     if (suffix != expected) fail("date", "Correct the ordinal suffix or use a day number such as 17");
     ++i;
 }
-void clock(const Tokens &t, size_t &i, Civil &d) {
+void clock(const Tokens &t, size_t &i, Civil &d) try {
     auto word = token(t, i++);
     d.clock = true;
     if (word == "noon" || word == "midnight") {
@@ -458,13 +419,17 @@ void clock(const Tokens &t, size_t &i, Civil &d) {
         if (hour < 1 || hour > 12) fail("time", "Use an hour from 1 to 12 with am or pm");
         hour = hour % 12 + (meridiem == "pm" ? 12 : 0);
         ++i;
-    } else if (!colon) fail("time", "Add am or pm, or use a 24-hour time such as 07:00");
+    } else if (!colon)
+        fail("time", "Add am or pm, or use a 24-hour time such as 07:00");
     if (hour > 23 || minute > 59 || second > 59) fail("time", "Use hours 00 to 23 and minutes and seconds 00 to 59");
     d.h = int(hour);
     d.min = int(minute);
     d.sec = int(second);
+} catch (Diagnostic error) {
+    if (!error.span) error.span = t.at(i ? i - 1 : 0);
+    throw error;
 }
-std::optional<Civil> dateAnchor(const Tokens &t, const Civil &ref, size_t &i) {
+std::optional<Civil> dateAnchor(const Tokens &t, const Civil &ref, size_t &i) try {
     auto word = token(t, 0);
     Civil d{ref.y, ref.m, ref.d};
     if (word == "today" || word == "tomorrow" || word == "yesterday") {
@@ -514,14 +479,16 @@ std::optional<Civil> dateAnchor(const Tokens &t, const Civil &ref, size_t &i) {
         d.m = nameIndex(token(t, i), true);
         if (!d.m) return {};
         ++i;
-    } else return {};
+    } else
+        return {};
     if (!explicitYear) {
         bool comma = token(t, i) == ",";
         if (comma) ++i;
         if (token(t, i).size() == 4 && integer(token(t, i)) >= 0) {
             d.y = int(integer(t[i++]));
             explicitYear = true;
-        } else if (comma) fail("date", "Add a four-digit year after the comma");
+        } else if (comma)
+            fail("date", "Add a four-digit year after the comma");
     }
     if (explicitYear) check(d);
     auto test = d;
@@ -529,8 +496,12 @@ std::optional<Civil> dateAnchor(const Tokens &t, const Civil &ref, size_t &i) {
     if (!valid(test)) fail("date", "Use a valid day for the selected month and year");
     d.upcomingYear = !explicitYear;
     return d;
+} catch (Diagnostic error) {
+    if (!error.span) error.span = t.at(i ? i - 1 : 0);
+    throw error;
 }
-Civil anchor(const Tokens &t, const Civil &ref, size_t &i) {
+
+Civil anchor(const Tokens &t, const Civil &ref, size_t &i) try {
     if (token(t, 0) == "now") {
         auto d = ref;
         d.exact = true;
@@ -553,18 +524,26 @@ Civil anchor(const Tokens &t, const Civil &ref, size_t &i) {
         }
     }
     if (hasTime && dayNumber(d) == dayNumber(ref)) {
-        if (timeOnly) d.roll = 1;
-        else if (d.upcomingWeekday) d.roll = 7;
-        else if (d.upcomingYear) d.roll = 12;
+        if (timeOnly)
+            d.roll = 1;
+        else if (d.upcomingWeekday)
+            d.roll = 7;
+        else if (d.upcomingYear)
+            d.roll = 12;
     }
     return d;
+} catch (Diagnostic error) {
+    if (!error.span) error.span = t.at(i ? i - 1 : 0);
+    throw error;
 }
+
 struct Parsed {
     Civil date;
     std::optional<int64_t> timestamp;
     Zone source;
 };
-Parsed parse(std::string text, int64_t reference) {
+Parsed parse(Source source, int64_t reference) {
+    auto &text = source.text;
     if (text.size() > 256) fail("input", "Use a date/time expression of at most 256 bytes");
     int milliseconds = 0;
     static const std::regex unixPattern(R"(^unix\s+([0-9]+\.?[0-9]*)\s*([a-z]*)$)");
@@ -581,7 +560,8 @@ Parsed parse(std::string text, int64_t reference) {
         auto whole = value.substr(0, dot);
         if (!digits(whole) || whole.size() > 14) rangeError();
         int64_t n = 0;
-        for (char c : whole) n = n * 10 + c - '0';
+        for (char c : whole)
+            n = n * 10 + c - '0';
         if (unit == "ms") {
             milliseconds = int(n % 1000);
             n /= 1000;
@@ -595,30 +575,42 @@ Parsed parse(std::string text, int64_t reference) {
     }
     bool iso = std::regex_match(text, match, isoPattern);
     if (iso) {
-        auto day = match[1].str(), time = match[2].str(), tail = match[3].str();
-        if (tail.starts_with('.')) {
-            size_t end = tail.find_first_not_of("0123456789", 1);
-            if (end == tail.npos) end = tail.size();
-            auto fraction = tail.substr(1, end - 1);
+        auto tailSource = source.slice(size_t(match.position(3)));
+        if (tailSource.text.starts_with('.')) {
+            auto end = tailSource.text.find_first_not_of("0123456789", 1);
+            if (end == tailSource.text.npos) end = tailSource.text.size();
+            auto fraction = tailSource.text.substr(1, end - 1);
             if (fraction.empty() || fraction.size() > 3) fail("timestamp", "Use one to three fractional second digits");
             milliseconds = fractionMilliseconds(fraction);
-            tail.erase(0, end);
+            tailSource = tailSource.slice(end);
         }
-        if (tail.starts_with('z')) tail = " utc" + tail.substr(1);
-        else if (tail.size() >= 6 && (tail[0] == '+' || tail[0] == '-') && tail[3] == ':') tail = " utc" + tail;
-        else fail("timestamp", "End the ISO timestamp with Z or an offset such as +09:30");
-        text = day + " at " + time + tail;
+        if (tailSource.text.starts_with('z')) {
+            auto origin = tailSource.span(0);
+            tailSource.replace(0, 1, Source(""));
+            tailSource.insert(0, " utc", origin);
+        } else if (tailSource.text.size() >= 6 && (tailSource.text[0] == '+' || tailSource.text[0] == '-') &&
+                   tailSource.text[3] == ':') {
+            tailSource.insert(0, " utc", tailSource.span(0));
+        } else {
+            fail("timestamp", "End the ISO timestamp with Z or an offset such as +09:30");
+        }
+        auto rewritten = source.slice(0, 10);
+        rewritten.insert(rewritten.text.size(), " at ", source.span(10));
+        rewritten.replace(rewritten.text.size(), 0, source.slice(11, size_t(match.length(2))));
+        rewritten.replace(rewritten.text.size(), 0, tailSource);
+        rewritten.end = source.end;
+        source = std::move(rewritten);
     }
-    auto t = tokenize(text);
+    auto t = tokenize(source);
     if (t.empty()) fail("input", "Enter now, tomorrow, or an expression such as now + 8h");
-    auto source = extractZone(t);
-    auto ref = zoneDate(reference, source);
+    auto zone = extractZone(t);
+    auto ref = zoneDate(reference, zone);
     Civil d;
     std::optional<CalendarPeriod> duration;
     int sign = 1;
     size_t i = 0;
-    if (token(t, 0) == "in" || (periodUnits().contains(token(t, 1)) && !token(t, 0).empty() &&
-                                std::isdigit(static_cast<unsigned char>(t[0][0])))) {
+    if (token(t, 0) == "in" ||
+        (periodUnit(token(t, 1)) && !token(t, 0).empty() && std::isdigit(static_cast<unsigned char>(t[0][0])))) {
         bool prefix = token(t, 0) == "in";
         i = prefix ? 1 : 0;
         duration = period(t, i);
@@ -626,8 +618,10 @@ Parsed parse(std::string text, int64_t reference) {
             if (token(t, i) == "ago") {
                 sign = -1;
                 ++i;
-            } else if (token(t, i) == "from" && token(t, i + 1) == "now") i += 2;
-            else fail("duration", "Use in 8h, 8h from now, or 8h ago");
+            } else if (token(t, i) == "from" && token(t, i + 1) == "now")
+                i += 2;
+            else
+                fail("duration", "Use in 8h, 8h from now, or 8h ago");
         }
         d = {ref.y, ref.m, ref.d};
         if (duration->hasTime) {
@@ -641,19 +635,20 @@ Parsed parse(std::string text, int64_t reference) {
             duration = period(t, i);
         }
     }
-    if (i != t.size()) syntax();
+    if (i != t.size()) failAt("syntax", "Remove extra input or add a valid date/time duration", t.at(i));
     if (!iso) milliseconds = d.ms;
-    if (!source.local() && !d.clock)
+    if (!zone.local() && !d.clock)
         fail("time_required", "Add a clock time to convert between timezones, such as tomorrow at 4pm EST");
     if (duration && duration->hasTime && !d.clock)
         fail("time_required", "Add a starting time, such as tomorrow at 7am + 8h");
     std::optional<int64_t> timestamp;
     if (d.clock) {
-        if (d.exact) timestamp = reference;
+        if (d.exact)
+            timestamp = reference;
         else {
             try {
-                timestamp = zoneTimestamp(d, source, d.roll ? std::optional<int64_t>{reference} : std::nullopt);
-            } catch (const Error &e) {
+                timestamp = zoneTimestamp(d, zone, d.roll ? std::optional<int64_t>{reference} : std::nullopt);
+            } catch (const Diagnostic &e) {
                 if (!d.roll ||
                     (e.code != "past" && !(e.code == "nonexistent_time" &&
                                            d.h * 3600 + d.min * 60 + d.sec < ref.h * 3600 + ref.min * 60 + ref.sec)))
@@ -663,8 +658,9 @@ Parsed parse(std::string text, int64_t reference) {
                         ++d.y;
                         check(d);
                     } while (!valid(d));
-                } else moveDays(d, d.roll);
-                timestamp = zoneTimestamp(d, source);
+                } else
+                    moveDays(d, d.roll);
+                timestamp = zoneTimestamp(d, zone);
             }
         }
     }
@@ -676,107 +672,37 @@ Parsed parse(std::string text, int64_t reference) {
             d.m = int(month % 12 + 1);
             auto last = year_month_day_last{year{d.y}, month_day_last{std::chrono::month{unsigned(d.m)}}};
             d.d = std::min(d.d, int(unsigned(last.day())));
-            if (d.clock) timestamp = zoneTimestamp(d, source);
+            if (d.clock) timestamp = zoneTimestamp(d, zone);
         }
         if (duration->days) {
             moveDays(d, sign * duration->days);
-            if (d.clock) timestamp = zoneTimestamp(d, source);
+            if (d.clock) timestamp = zoneTimestamp(d, zone);
         }
         if (d.clock && duration->seconds) {
             *timestamp += sign * duration->seconds;
-            d = zoneDate(*timestamp, source);
+            d = zoneDate(*timestamp, zone);
         }
     }
     if (timestamp) d = zoneDate(*timestamp, {});
     d.ms = milliseconds;
-    return {d, timestamp, source};
+    return {d, timestamp, zone};
 }
-std::string isoDate(const Civil &d) { return std::format("{:04}-{:02}-{:02}", d.y, d.m, d.d); }
-std::string fraction(const Civil &d) { return d.ms ? std::format(".{:03}", d.ms) : ""; }
-std::string isoTime(const Civil &d) {
-    return isoDate(d) + std::format(" {:02}:{:02}:{:02}", d.h, d.min, d.sec) + fraction(d);
-}
-std::string longDate(const Civil &d, bool abbreviated = false) {
-    auto weekday = weekdays[weekdayNumber(d) - 1], month = months[d.m - 1];
-    if (abbreviated) {
-        weekday.resize(3);
-        month.resize(3);
-    }
-    return std::format("{}, {} {} {}", weekday, d.d, month, d.y);
-}
-std::string isoWeek(const Civil &d) {
-    // A week-year may cross the supported input-year boundary.
-    auto thursday = sys_days{ymd(d)} + days{4 - weekdayNumber(d)};
-    auto year = year_month_day{thursday}.year();
-    auto start = sys_days{year / January / 1};
-    return std::format("{:04}-W{:02}", int(year), (thursday - start).count() / 7 + 1);
-}
-std::string timespan(int64_t seconds) {
-    auto n = std::abs(seconds);
-    std::string text = seconds < 0 ? "-" : "";
-    bool any = false;
-    for (auto [scale, label] : {std::pair{86400, "day"}, {3600, "hour"}, {60, "minute"}, {1, "second"}}) {
-        auto count = n / scale;
-        n %= scale;
-        if (!count) continue;
-        if (any) text += ' ';
-        any = true;
-        text += std::to_string(count) + " " + label + (count == 1 ? "" : "s");
-    }
-    return any ? text : "0 seconds";
-}
-Result durationResult(int64_t seconds, bool calendar, const std::string &expression, bool plus = false) {
-    Result result;
-    result.status = Status::Success;
-    result.recognize = true;
-    result.value = Duration{seconds, calendar};
-    auto count = seconds / 86400;
-    auto title = calendar ? std::to_string(count) + " day" + (std::abs(count) == 1 ? "" : "s") : timespan(seconds);
-    if (plus && seconds > 0) title = "+" + title;
-    result.outputs.push_back({"Copy", title, expression, title});
-    return result;
-}
-Result formatted(const Parsed &result, const Zone &dest, int64_t reference) {
-    Result out;
-    out.status = Status::Success;
-    out.recognize = true;
+Solution resolved(const Parsed &result, const Zone &dest, int64_t reference) {
     auto d = result.date;
     if (!result.timestamp) {
         if (!dest.local()) fail("time_required", "Add a clock time before converting to another timezone");
-        out.value = Date{ymd(d)};
-        auto date = isoDate(d), full = longDate(d), week = isoWeek(d);
-        out.outputs = {{"Copy", date, longDate(d, true), date},
-                       {"Copy Full Date", "Full date", full, full},
-                       {"Copy ISO Week", "ISO week", week, week}};
-        return out;
+        return {Date{ymd(d)}, true};
     }
     auto timestamp = *result.timestamp;
     d = zoneDate(timestamp, dest);
     d.ms = result.date.ms;
-    out.value = Instant{sys_time<milliseconds>{seconds{timestamp} + milliseconds{d.ms}}};
-    auto ref = zoneDate(reference, dest);
-    auto delta = dayNumber(d) - dayNumber(ref);
-    std::string relative = delta == 0 ? "today" : delta == 1 ? "tomorrow" : delta == -1 ? "yesterday" : isoDate(d);
-    auto title = std::format("{:02}:{:02}", d.h, d.min);
-    if (d.sec || d.ms) title += std::format(":{:02}", d.sec);
-    title += fraction(d) + " " + relative;
-    auto subtitle = longDate(d, true) + " · " + d.label;
+    Instant value;
+    value.time = sys_time<milliseconds>{seconds{timestamp} + milliseconds{d.ms}};
+    value.destination = {ymd(d), d.h, d.min, d.sec, d.ms, d.offset, d.label};
+    value.relativeDays = dayNumber(d) - dayNumber(zoneDate(reference, dest));
     if (!result.source.local() && result.source.name != dest.name)
-        subtitle += " · From " + zoneDate(timestamp, result.source).label;
-    auto utc = zoneDate(timestamp, Zone{"UTC"});
-    utc.ms = d.ms;
-    auto iso = isoTime(utc);
-    iso[10] = 'T';
-    iso += 'Z';
-    auto unix = std::to_string(timestamp) + fraction(d);
-    auto discord = "<t:" + std::to_string(timestamp) + ":f>";
-    auto discordRelative = "<t:" + std::to_string(timestamp) + ":R>";
-    out.outputs = {{"Copy", title, subtitle, isoTime(d) + " " + offsetLabel(d.offset)},
-                   {"Copy Discord", "Discord timestamp", discord, discord},
-                   {"Copy Discord Relative", "Discord relative", discordRelative, discordRelative},
-                   {"Copy ISO", "ISO 8601 · UTC", iso, iso},
-                   {"Copy Unix", "Unix seconds", unix, unix}};
-    return out;
+        value.sourceLabel = zoneDate(timestamp, result.source).label;
+    return {std::move(value), true};
 }
 } // namespace
 
@@ -793,75 +719,69 @@ bool temporalForm(const std::string &text) {
     return text.find(" ago ") != text.npos || text.find(" from now ") != text.npos || text.ends_with(" ago") ||
            text.ends_with(" from now") || text.ends_with(" timespan");
 }
-Result datetime(std::string text, int64_t reference) {
+Solution datetime(Source source, int64_t reference) {
+    auto &text = source.text;
     if (reference < 0 || reference >= 32503680000LL) rangeError();
     if (text.starts_with("days until ") || text.starts_with("days since ")) {
-        auto value = parse(text.substr(11), reference);
+        auto value = parse(source.slice(11), reference);
         if (value.timestamp) fail("date", "Use a date without a clock for calendar day differences");
         auto days =
             (dayNumber(value.date) - dayNumber(zoneDate(reference, {}))) * (text.starts_with("days since") ? -1 : 1);
-        return durationResult(days * 86400, true, text);
+        return {Duration{days * 86400, true}, true};
     }
-    if (auto minus = text.find(" - "); minus != text.npos) {
-        std::optional<Parsed> a, b;
-        try {
-            a = parse(text.substr(0, minus), reference);
-            b = parse(text.substr(minus + 3), reference);
-        } catch (const Error &) {
-            b.reset();
+    if (auto minus = text.find(" - "); minus != text.npos && temporalForm(text.substr(minus + 3))) {
+        auto a = parse(source.slice(0, minus), reference);
+        auto b = parse(source.slice(minus + 3), reference);
+        if (bool(a.timestamp) != bool(b.timestamp))
+            fail("date", "Subtract two dates or two times; add a clock to both for elapsed time");
+        if (a.timestamp) {
+            if (a.date.ms || b.date.ms) fail("duration", "Use whole-second timestamps for elapsed differences");
+            return {Duration{*a.timestamp - *b.timestamp}, true};
         }
-        if (a && b) {
-            if (bool(a->timestamp) != bool(b->timestamp))
-                fail("date", "Subtract two dates or two times; add a clock to both for elapsed time");
-            if (a->timestamp) {
-                if (a->date.ms || b->date.ms) fail("duration", "Use whole-second timestamps for elapsed differences");
-                return durationResult(*a->timestamp - *b->timestamp, false, text);
-            }
-            return durationResult((dayNumber(a->date) - dayNumber(b->date)) * 86400, true, text);
-        }
-    }
-    if (text.ends_with(" to timespan") || text.ends_with(" in timespan")) {
-        auto t = tokenize(text.substr(0, text.size() - 12));
-        size_t i = 0;
-        auto value = period(t, i);
-        if (i != t.size() || value.months) fail("duration", "Use seconds through weeks for an elapsed timespan");
-        return durationResult(value.days * 86400 + value.seconds, false, text);
+        return {Duration{(dayNumber(a.date) - dayNumber(b.date)) * 86400, true}, true};
     }
     if (text.starts_with("time diff ") || text.starts_with("diff ")) {
         auto name = text.substr(text.starts_with("time diff ") ? 10 : 5);
-        auto zone = destination(name);
+        auto zone = destination(source.slice(text.starts_with("time diff ") ? 10 : 5));
         auto there = zoneDate(reference, zone), here = zoneDate(reference, {});
-        return durationResult(civilSeconds(there) - civilSeconds(here), false, name + " versus local at this instant",
-                              true);
+        return {Duration{civilSeconds(there) - civilSeconds(here), false, true, name}, true};
     }
-    if (text == "time") text = "now";
-    else if (text.starts_with("time in ")) {
-        text.erase(0, 5);
+    if (text == "time") {
+        auto origin = source.span(0, 4);
+        source.replace(0, 4, Source(""));
+        source.insert(0, "now", origin);
+    } else if (text.starts_with("time in ")) {
+        source = source.slice(5);
         try {
-            destination(text.substr(3));
-            text = "now to " + text.substr(3);
-        } catch (const Error &) {
+            destination(source.slice(3));
+            auto origin = source.span(0, 3);
+            source = source.slice(3);
+            source.insert(0, "now to ", origin);
+        } catch (const Diagnostic &) {
+            if (text.size() <= 3 || text[3] < '0' || text[3] > '9') throw;
         }
     }
     std::optional<Zone> dest;
     auto split = text.find(" to ");
     if (split != text.npos) {
-        dest = destination(text.substr(split + 4));
-        text.resize(split);
+        dest = destination(source.slice(split + 4));
+        source = source.slice(0, split);
     } else {
         // A duration's `in` remains arithmetic. Only a complete zone suffix converts.
         for (auto pos = text.rfind(" in "); pos != text.npos; pos = pos ? text.rfind(" in ", pos - 1) : text.npos) {
             try {
-                dest = destination(text.substr(pos + 4));
-                text.resize(pos);
+                dest = destination(source.slice(pos + 4));
+                source = source.slice(0, pos);
                 break;
-            } catch (const Error &) {
+            } catch (const Diagnostic &) {
+                if (pos + 4 == text.size() || text[pos + 4] < '0' || text[pos + 4] > '9') throw;
             }
         }
-        if (text.ends_with(" to")) fail("timezone", "Add a destination after to, such as UTC or PT");
+        if (text.ends_with(" to"))
+            failAt("timezone", "Add a destination after 'to', such as UTC or PT", source.span(text.size()));
     }
-    auto value = parse(text, reference);
+    auto value = parse(source, reference);
     if (dest && !value.timestamp) fail("time_required", "Add a clock time before converting to another timezone");
-    return formatted(value, dest.value_or(Zone{}), reference);
+    return resolved(value, dest.value_or(Zone{}), reference);
 }
-} // namespace calculator::detail
+} // namespace solver::detail

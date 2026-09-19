@@ -1,43 +1,13 @@
-#include "calculator.h"
+#include "solver_internal.h"
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <locale>
 #include <map>
 #include <numbers>
 #include <sstream>
-#include <locale>
-#include <iomanip>
 
-namespace calculator {
-namespace detail {
-[[noreturn]] void fail(std::string code, std::string message, size_t position) {
-    throw Error{std::move(code), std::move(message), position};
-}
-double checked(double value, size_t position) {
-    if (!std::isfinite(value))
-        fail("overflow", "The result is outside the finite numeric range; use smaller values", position);
-    return value;
-}
-std::string lower(std::string_view text) {
-    std::string result(text);
-    for (auto &c : result)
-        if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
-    return result;
-}
-std::string clean(std::string_view text) {
-    std::string result;
-    bool space = false;
-    for (const unsigned char c : text) {
-        if (c == ' ' || (c >= '\t' && c <= '\r')) space = !result.empty();
-        else {
-            if (space) result += ' ';
-            result += char(c);
-            space = false;
-        }
-    }
-    return result;
-}
-} // namespace detail
+namespace solver {
 using namespace detail;
 namespace {
 bool digit(char c) { return c >= '0' && c <= '9'; }
@@ -60,10 +30,12 @@ std::vector<Token> tokenize(std::string_view text) {
         Token token;
         token.position = start + 1;
         if (digit(c) || (c == '.' && i + 1 < text.size() && digit(text[i + 1]))) {
-            while (i < text.size() && digit(text[i])) ++i;
+            while (i < text.size() && digit(text[i]))
+                ++i;
             if (i < text.size() && text[i] == '.') {
                 ++i;
-                while (i < text.size() && digit(text[i])) ++i;
+                while (i < text.size() && digit(text[i]))
+                    ++i;
             }
             if (i < text.size() && (text[i] == 'e' || text[i] == 'E')) {
                 const auto exponent = i++;
@@ -71,9 +43,11 @@ std::vector<Token> tokenize(std::string_view text) {
                 if (i == text.size() || !digit(text[i]))
                     fail("number", "Add exponent digits, such as 1e3; separate the constant e with a space",
                          exponent + 1);
-                while (i < text.size() && digit(text[i])) ++i;
+                while (i < text.size() && digit(text[i]))
+                    ++i;
             }
             token.kind = "number";
+            token.text = std::string(text.substr(start, i - start));
             auto part = text.substr(start, i - start);
             auto parsed = std::from_chars(part.data(), part.data() + part.size(), token.value);
             if (parsed.ec == std::errc::result_out_of_range) {
@@ -86,14 +60,22 @@ std::vector<Token> tokenize(std::string_view text) {
             }
             checked(token.value, start + 1);
         } else if (alpha(c)) {
-            while (i < text.size() && (alpha(text[i]) || digit(text[i]))) ++i;
+            while (i < text.size() && (alpha(text[i]) || digit(text[i])))
+                ++i;
+            if (!findUnit(text.substr(start, i - start))) {
+                auto letters = start;
+                while (letters < i && alpha(text[letters]))
+                    ++letters;
+                if (letters < i && periodUnit(text.substr(start, letters - start))) i = letters;
+            }
             if (i < text.size() && text[i] == '/') {
                 auto end = i + 1;
-                while (end < text.size() && alpha(text[end])) ++end;
-                if (findUnit(lower(text.substr(start, end - start)))) i = end;
+                while (end < text.size() && alpha(text[end]))
+                    ++end;
+                if (findUnit(text.substr(start, end - start))) i = end;
             }
             token.kind = "name";
-            token.text = lower(text.substr(start, i - start));
+            token.text = std::string(text.substr(start, i - start));
         } else {
             if (std::string_view("+-*/^%!(),").find(c) == std::string_view::npos)
                 fail("character", "Remove this character; use numbers, math operators, and supported names", start + 1);
@@ -126,7 +108,8 @@ double factorial(double value, size_t pos) {
     if (value < 0 || std::trunc(value) != value) fail("domain", "Use a nonnegative integer for factorial", pos);
     if (value > 170) fail("overflow", "Use a factorial argument no larger than 170", pos);
     double result = 1;
-    for (int i = 2; i <= value; ++i) result *= i;
+    for (int i = 2; i <= value; ++i)
+        result *= i;
     return result;
 }
 const std::map<std::string, std::pair<size_t, size_t>> functions{
@@ -138,7 +121,7 @@ double callFunction(const Token &t, const std::vector<double> &a) {
     const auto &n = t.text;
     const double x = a[0];
     const auto domain = [&](bool valid, std::string message) {
-        if (!valid) fail("domain", std::move(message), t.position);
+        if (!valid) failAt("domain", std::move(message), {t.position - 1, t.position - 1 + t.text.size()});
     };
     if (n == "abs") return std::abs(x);
     if (n == "floor") return std::floor(x);
@@ -191,6 +174,7 @@ double callFunction(const Token &t, const std::vector<double> &a) {
 class MathParser {
     std::vector<Token> tokens;
     size_t index = 0, depth = 0;
+    std::vector<PeriodToken> periodTokens;
     const Token &peek(size_t ahead = 0) const { return tokens[std::min(index + ahead, tokens.size() - 1)]; }
     Token take() {
         auto t = peek();
@@ -201,9 +185,32 @@ class MathParser {
         if (peek().kind != kind) fail("syntax", std::move(message), peek().position);
         take();
     }
+    const std::vector<PeriodToken> &durationTokens() {
+        if (!periodTokens.empty()) return periodTokens;
+        periodTokens.reserve(tokens.size() - 1);
+        for (size_t i = 0; i + 1 < tokens.size(); ++i) {
+            const auto &t = tokens[i];
+            auto length = t.text.empty() ? t.kind.size() : t.text.size();
+            periodTokens.push_back({t.text.empty() ? t.kind : t.text, {t.position - 1, t.position - 1 + length}});
+        }
+        return periodTokens;
+    }
     Number prefix() {
         const auto t = take();
-        if (t.kind == "number") return {t.value};
+        if (t.kind == "number") {
+            if (peek().kind == "name" && periodUnit(peek().text, false) &&
+                (peek(1).kind == "number" || peek(1).text == "and" || peek(1).kind == ",")) {
+                size_t after = index - 1;
+                auto terms = readPeriod(durationTokens(), after);
+                if (terms.terms.size() > 1) {
+                    auto quantity = periodQuantity(terms);
+                    index = after;
+                    operation = true;
+                    return {quantity.value, false, quantity.unit};
+                }
+            }
+            return {t.value};
+        }
         if (t.kind == "name") {
             if (t.text == "pi") return {std::numbers::pi};
             if (t.text == "e") return {std::exp(1.0)};
@@ -239,6 +246,11 @@ class MathParser {
             expect(")", "Close the grouped expression with )");
             return value;
         }
+        if (t.kind == "end" && index > 0) {
+            const auto &previous = tokens[index - 1];
+            failAt("syntax", "Add a value after '" + (previous.text.empty() ? previous.kind : previous.text) + "'",
+                   {t.position - 1, t.position - 1});
+        }
         fail("syntax", "Add a number, constant, function call, or grouped expression here", t.position);
     }
     Number binary(std::string_view op, Number left, Number right, const Token &t) {
@@ -266,14 +278,16 @@ class MathParser {
             if (right.percentage && !left.percentage) b = checked(a * b, t.position);
             value = op == "+" ? a + b : a - b;
             percentage = left.percentage && right.percentage;
-        } else if (op == "*") value = a * b;
+        } else if (op == "*")
+            value = a * b;
         else if (op == "of" || op == "off") {
             if (!left.percentage) fail("percentage", "Put a percentage before of, such as 15% of 240", t.position);
             value = (op == "off" ? 1 - a : a) * b;
         } else if (op == "/") {
             if (b == 0) fail("division_by_zero", "Use a nonzero divisor", t.position);
             value = a / b;
-        } else value = power(a, b, t.position);
+        } else
+            value = power(a, b, t.position);
         return {checked(value, t.position), percentage, unit};
     }
     Number expression(int minimum) {
@@ -301,10 +315,14 @@ class MathParser {
                 std::string op = t.kind;
                 int binding = 0;
                 bool implicit = false;
-                if (t.kind == "+" || t.kind == "-") binding = 10;
-                else if (t.kind == "*" || t.kind == "/") binding = 20;
-                else if (t.kind == "^") binding = 40;
-                else if (t.kind == "name" && (t.text == "to" || t.text == "in")) break;
+                if (t.kind == "+" || t.kind == "-")
+                    binding = 10;
+                else if (t.kind == "*" || t.kind == "/")
+                    binding = 20;
+                else if (t.kind == "^")
+                    binding = 40;
+                else if (t.kind == "name" && (t.text == "to" || t.text == "in"))
+                    break;
                 else if (t.kind == "name" && (t.text == "of" || t.text == "off")) {
                     op = t.text;
                     binding = 20;
@@ -317,6 +335,9 @@ class MathParser {
                     implicit = true;
                 }
                 if (binding <= minimum) break;
+                if (implicit && t.kind == "name" && t.text != "pi" && t.text != "e" && !functions.contains(t.text))
+                    failAt("unknown_unit", "Unknown unit or name; use a supported unit, constant or function",
+                           {t.position - 1, t.position - 1 + t.text.size()});
                 operation = true;
                 if (!implicit) take();
                 left = binary(op, left, expression(op == "^" ? binding - 1 : binding), t);
@@ -335,6 +356,12 @@ class MathParser {
             auto t = take();
             auto target = take();
             auto unit = target.kind == "name" ? findUnit(target.text) : nullptr;
+            if (target.kind == "end")
+                failAt("syntax", "Add a destination unit after '" + t.text + "'",
+                       {target.position - 1, target.position - 1});
+            if (!unit)
+                failAt("unknown_unit", "Unknown unit; use a supported unit such as cm, min or months",
+                       {target.position - 1, target.position - 1 + target.text.size()});
             value = {convert(value.value, value.unit, unit, t.position), false, unit};
             operation = true;
         }
@@ -344,46 +371,18 @@ class MathParser {
         return value;
     }
 };
-std::string formatNumber(double value) {
-    if (!std::isfinite(value)) fail("value", "Supply a finite numeric result");
-    if (value == 0) return "0";
-    std::ostringstream out;
-    out.imbue(std::locale::classic());
-    if (std::trunc(value) == value && std::abs(value) <= 9007199254740992.0)
-        out << std::fixed << std::setprecision(0) << value;
-    else out << std::setprecision(15) << value;
-    return out.str();
-}
 } // namespace
-Result evaluate(std::string_view text, int64_t reference) {
-    try {
-        if (text.size() > 1024) fail("input", "Use an expression of at most 1024 bytes");
-        auto display = clean(text);
-        auto normalized = lower(display);
-        if (colorForm(normalized)) {
-            if (text.size() > 256) fail("input", "Use a color expression of at most 256 bytes");
-            return colors(normalized);
-        }
-        if (temporalForm(normalized)) {
-            if (text.size() > 256) fail("input", "Use a date/time expression of at most 256 bytes");
-            return datetime(std::move(normalized), reference);
-        }
-        if (baseForm(normalized)) return bases(text);
-        MathParser parser(text);
-        const auto n = parser.parse();
-        Result result;
-        result.status = Status::Success;
-        result.recognize = parser.operation;
-        if (n.unit) result.value = Quantity{n.value, n.unit};
-        else result.value = Scalar{n.value, n.percentage};
-        const auto title = formatNumber(n.value) + (n.unit ? " " + n.unit->symbol : "");
-        result.outputs.push_back({"Copy", title, std::move(display), title});
-        return result;
-    } catch (const Error &error) {
-        Result result;
-        result.status = Status::Error;
-        result.error = error;
-        return result;
-    }
+namespace detail {
+Solution math(std::string_view text) {
+    MathParser parser(text);
+    const auto n = parser.parse();
+    Solution result;
+    result.recognize = parser.operation;
+    if (n.unit)
+        result.value = Quantity{n.value, n.unit};
+    else
+        result.value = Scalar{n.value, n.percentage};
+    return result;
 }
-} // namespace calculator
+} // namespace detail
+} // namespace solver

@@ -1,5 +1,5 @@
 #include "app_command.h"
-#include "calculator.h"
+#include "solver.h"
 #include "calculator_command.h"
 #include "suites.h"
 #include <algorithm>
@@ -9,32 +9,30 @@
 #include <stdexcept>
 
 namespace {
-using namespace calculator;
+using namespace solver;
 void check(bool value, const std::string &message) {
     if (!value)
         throw std::runtime_error(message);
 }
-Result success(const std::string &text) {
+Solution success(const std::string &text) {
     auto result = evaluate(text, 1789480800);
-    check(result.status == Status::Success && result.value && result.recognize, text + ": " + result.error.message);
-    return result;
+    if (auto e = std::get_if<Diagnostic>(&result)) throw std::runtime_error(text + ": " + e->message);
+    auto solution = std::get<Solution>(result);
+    check(solution.recognize, text + ": not recognized");
+    return solution;
 }
-std::string copy(const std::string &text, const std::string &action = "Copy") {
-    auto result = success(text);
-    for (const auto &output : result.outputs)
-        if (output.action == action)
-            return output.copy;
-    throw std::runtime_error("Missing " + action + " for " + text);
+std::string copy(const std::string &text, Format action = Format::Primary) {
+    return format(success(text), action);
 }
-void expect(const std::string &text, const std::string &expected, const std::string &action = "Copy") {
+void expect(const std::string &text, const std::string &expected, Format action = Format::Primary) {
     auto actual = copy(text, action);
     check(actual == expected, text + ": expected " + expected + "; got " + actual);
 }
 void reject(const std::string &text) {
     auto result = evaluate(text, 1789480800);
-    check(result.status == Status::Error && !result.value && result.outputs.empty() && !result.recognize &&
-              !result.error.code.empty() && !result.error.message.empty() && result.error.position <= text.size() + 1,
-          "Expected bounded rejection: " + text);
+    auto error = std::get_if<Diagnostic>(&result);
+    check(error && !error->code.empty() && !error->message.empty() && (!error->span ||
+        (error->span->begin <= error->span->end && error->span->end <= text.size())), "Expected bounded rejection: " + text);
 }
 } // namespace
 
@@ -97,7 +95,7 @@ int runCalculatorFormatTests() {
     for (int i = 0; i < 256; ++i)
         tooMany += "+1";
     reject(tooMany);
-    check(std::holds_alternative<Scalar>(*evaluate("255", 1789480800).value) && !evaluate("255", 1789480800).recognize,
+    check(std::holds_alternative<Scalar>(std::get<Solution>(evaluate("255", 1789480800)).value) && !std::get<Solution>(evaluate("255", 1789480800)).recognize,
           "Plain decimal literals retain scalar/search semantics");
 
     for (auto [text, expected] : {std::pair{"#ff8800 to rgb", "rgb(255, 136, 0)"},
@@ -165,10 +163,10 @@ int runCalculatorFormatTests() {
         random = random * 6364136223846793005ULL + 1;
         auto input = std::to_string(random) + " to hex";
         auto result = success(input);
-        for (const auto &out : result.outputs) {
-            auto parsed = success(out.copy + " to decimal");
-            auto number = std::get<Integer>(*parsed.value);
-            check(number.magnitude == random && !number.negative, "Exact base round trip: " + out.copy);
+        for (auto f : formats(result)) {
+            auto parsed = success(format(result, f) + " to decimal");
+            auto number = std::get<Integer>(parsed.value);
+            check(number.magnitude == random && !number.negative, "Exact base round trip: " + format(result, f));
         }
         int64_t a = int64_t(random % 2000001) - 1000000, b = int64_t((random >> 32) % 2000001) - 1000000;
         auto left = copy(std::to_string(a) + " to hex"), right = copy(std::to_string(b) + " to hex");
@@ -181,7 +179,7 @@ int runCalculatorFormatTests() {
         random = random * 6364136223846793005ULL + 1;
         auto input = std::format("#{:06x}{:02x}", unsigned(random & 0xffffff), i % 256);
         auto canonical = copy(input);
-        for (auto action : {"Copy RGB", "Copy HSL"})
+        for (auto action : {Format::RGB, Format::HSL})
             expect(copy(input, action), canonical);
     }
     std::vector<std::string> pieces{"#", "rgb(", "hsl(", ")",  "0x",  "0b", "0o", "1",  "f",
@@ -193,8 +191,8 @@ int runCalculatorFormatTests() {
             text += pieces[random % pieces.size()] + " ";
         }
         auto result = evaluate(text, 1789480800);
-        check((result.status == Status::Success && result.value && !result.outputs.empty()) ||
-                  (result.status == Status::Error && !result.error.message.empty()),
+        check((std::holds_alternative<Solution>(result) && !format(std::get<Solution>(result)).empty()) ||
+                  (std::holds_alternative<Diagnostic>(result) && !std::get<Diagnostic>(result).message.empty()),
               "Malformed format input lost result/error");
     }
 
