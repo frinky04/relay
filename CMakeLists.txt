@@ -17,6 +17,7 @@ add_library(relay_core STATIC
   src/fuzzy.cpp
   src/util.cpp
   src/frecency.cpp
+  src/hidden_apps.cpp
   src/notices.cpp
   src/command.cpp
   src/engine.cpp

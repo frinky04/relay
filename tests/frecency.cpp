@@ -1,5 +1,6 @@
 #include "suites.h"
 #include "app_command.h"
+#include "hidden_apps.h"
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -12,6 +13,39 @@ int runFrecencyTests() {
     const auto directory = std::filesystem::temp_directory_path() / ("relay-history-" + std::to_string(GetCurrentProcessId()));
     std::filesystem::create_directories(directory);
     const auto path = directory / "history.tsv";
+    {
+        const auto hiddenPath = directory / "hidden-apps.tsv";
+        HiddenApps hidden(hiddenPath);
+        check(hidden.load().empty() && !hidden.contains("id:app"), "missing hidden-app file starts empty");
+        check(hidden.set("id:app", "App", true).empty() && hidden.contains("id:app"), "hiding saves and updates visibility");
+        check(hidden.set("path:c:\\other.lnk", "Other App", true).empty(), "second hidden app preserves first entry");
+        HiddenApps restoredHidden(hiddenPath);
+        check(restoredHidden.load().empty() && restoredHidden.contains("id:app") && restoredHidden.contains("path:c:\\other.lnk"),
+            "hidden identities survive reconstruction");
+        const auto stamp = std::filesystem::last_write_time(hiddenPath);
+        check(hidden.set("id:app", "App", true).empty() && std::filesystem::last_write_time(hiddenPath) == stamp,
+            "idempotent hiding does not rewrite the file");
+        SetFileAttributesW(hiddenPath.c_str(), FILE_ATTRIBUTE_READONLY);
+        check(!hidden.set("id:new", "New", true).empty() && !hidden.contains("id:new"), "failed hide keeps prior visibility");
+        check(!hidden.set("id:app", "App", false).empty() && hidden.contains("id:app"), "failed show keeps app hidden");
+        SetFileAttributesW(hiddenPath.c_str(), FILE_ATTRIBUTE_NORMAL);
+        check(hidden.set("id:app", "App", false).empty() && !hidden.contains("id:app") &&
+            restoredHidden.load().empty() && !restoredHidden.contains("id:app") && restoredHidden.contains("path:c:\\other.lnk"),
+            "show removes only the selected identity from disk and memory");
+        check(!hidden.set("bad\tid", "App", true).empty() && !hidden.set("id:new", "bad\nname", true).empty(),
+            "TSV delimiters cannot create extra preference records");
+        { std::ofstream out(hiddenPath, std::ios::app); out << "bad\n\tempty\nid:extra\tname\textra\n"; }
+        check(hidden.load().empty() && hidden.contains("path:c:\\other.lnk") && !hidden.contains("id:extra"),
+            "malformed preference records do not affect valid hidden apps");
+        HANDLE locked = CreateFileW(hiddenPath.c_str(), GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        check(locked != INVALID_HANDLE_VALUE && !hidden.set("id:new", "New", true).empty() && !hidden.contains("id:new"),
+            "unreadable preference file blocks writes instead of losing existing entries");
+        if (locked != INVALID_HANDLE_VALUE) CloseHandle(locked);
+        check(hidden.set("path:c:\\other.lnk", "Other App", false).empty() && restoredHidden.load().empty() &&
+            !restoredHidden.contains("path:c:\\other.lnk"), "showing the last app persists an empty list");
+        check(!std::filesystem::exists(hiddenPath.wstring() + L".tmp"), "preference saves leave no temporary file");
+        std::filesystem::remove(hiddenPath);
+    }
     Frecency history(path);
     check(history.load().empty() && history.score("missing") == 0, "missing history starts empty");
     const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();

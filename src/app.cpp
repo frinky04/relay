@@ -1,5 +1,6 @@
 #include "calculator_command.h"
 #include "app.h"
+#include "hidden_apps.h"
 #include "theme.h"
 #include "icons.h"
 #include "util.h"
@@ -199,10 +200,17 @@ bool App::init(HINSTANCE inst) {
     });
     auto history = std::make_shared<Frecency>(fs::path(dataDir()) / L"frecency.tsv");
     auto runApp = [copy](const std::string& target, desktop::AppAction action) { return desktop::runApp(target, action, copy); };
-    auto scanApps = [history, report, runApp] { return appCommand(desktop::listApps(), runApp, history, report); };
-    m_engine.start([this, hwnd, report, copy, history, runApp, scanApps](auto reloadPlugins, auto rescanApps) {
+    auto hiddenApps = std::make_shared<HiddenApps>(fs::path(dataDir()) / L"hidden-apps.tsv");
+    AppSearchOptions search;
+    search.hidden = [hiddenApps](const std::string& id) { return hiddenApps->contains(id); };
+    search.setHidden = [hiddenApps](const std::string& id, const std::string& name, bool hidden) {
+        return hiddenApps->set(id, name, hidden);
+    };
+    auto scanApps = [history, report, runApp, search] { return appCommand(desktop::listApps(), runApp, history, report, search); };
+    m_engine.start([this, hwnd, report, copy, history, hiddenApps, runApp, scanApps](auto reloadPlugins, auto rescanApps) {
         auto error = history->load();
         if (!error.empty()) report(std::move(error));
+        if (auto error = hiddenApps->load(); !error.empty()) report(std::move(error));
         std::vector<command::Command> commands;
         try { commands.push_back(scanApps()); }
         catch (const std::exception& e) {

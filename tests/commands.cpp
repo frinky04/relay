@@ -17,6 +17,9 @@
 #include "util.h"
 #include <shobjidl.h>
 #include <wrl/client.h>
+#include <propkey.h>
+#include <propvarutil.h>
+#include <unordered_set>
 
 using namespace std::chrono_literals;
 static int failures = 0;
@@ -49,6 +52,55 @@ struct Signal {
 
 int runCommandTests() {
     {
+        std::unordered_set<std::string> hidden;
+        bool failSave = false;
+        std::string launched;
+        AppSearchOptions options;
+        options.hidden = [&](const auto& id) { return hidden.contains(id); };
+        options.setHidden = [&](const auto& id, const auto&, bool hiding) {
+            if (failSave) return std::string("Cannot save; check permissions");
+            if (hiding) hidden.insert(id);
+            else hidden.erase(id);
+            return std::string{};
+        };
+        std::vector<command::Command> catalog{appCommand({
+            {"Example", "shell:AppsFolder\\example", "example", "c:\\example.exe\n"},
+            {"Example", "c:\\desktop\\example.lnk", {}, "c:\\example.exe\n"},
+            {"Example help", "help"}, {"Example tutorial", "tutorial"}, {"Example (32-bit)", "32bit"}},
+            [&](const auto& target, desktop::AppAction) { launched = target; return std::string{}; }, {}, {}, options)};
+        auto results = command::evaluate(catalog, "Example");
+        check(results.view.rows.size() == 4 && results.view.rows[0].title == "Example" &&
+            results.view.rows[0].subtitle.empty() && results.view.rows[0].context.empty() &&
+            results.view.rows[0].actionLabel == "Open", "duplicate launches merge and bare app rows omit repeated labels");
+        check(command::evaluate(catalog, "Example help").view.rows[0].title == "Example help",
+            "explicit helper search still ranks its exact match first");
+        auto hide = command::evaluate(catalog, "/app Example Hide from Search");
+        failSave = true;
+        check(hide.actions.size() == 1 && !hide.actions[0]().empty() && hidden.empty(), "failed persistence does not hide an app");
+        failSave = false;
+        check(hide.actions[0]().empty() && hidden.contains("id:example"), "hide binds stable app identity");
+        check(command::evaluate(catalog, "Example").view.rows.size() == 3 &&
+            command::evaluate(catalog, "").view.rows.size() == 3, "hidden apps disappear from both bare and empty search");
+        check(command::evaluate(catalog, "/app ").view.rows.size() == 4 &&
+            command::evaluate(catalog, "/app Example Open").actions[0]().empty() && launched == "shell:AppsFolder\\example",
+            "hidden apps remain available through scoped app search and actions");
+        check(command::evaluate(catalog, "/app Example Hide from Search").view.rows.empty(), "already hidden app offers no redundant hide action");
+        auto show = command::evaluate(catalog, "/app Example Show in Search");
+        failSave = true;
+        check(show.actions.size() == 1 && !show.actions[0]().empty() && hidden.contains("id:example"),
+            "failed show persistence keeps the app hidden");
+        failSave = false;
+        check(show.actions[0]().empty() && command::evaluate(catalog, "Example").view.rows.size() == 4,
+            "Show in Search restores hidden apps without rescanning");
+        check(command::evaluate(catalog, "/app Example Show in Search").view.rows.empty(),
+            "visible apps do not offer Show in Search");
+        std::vector<command::Command> variants{appCommand({
+            {"Example", "installed", "example", "exe\n"},
+            {"Example", "profile", {}, "exe\n--profile work"},
+            {"Example", "other", "other", "exe\n"}}, [](const auto&, auto) { return std::string{}; })};
+        check(command::evaluate(variants, "").view.rows.size() == 3, "different arguments and explicit identities never merge by executable alone");
+    }
+    {
         namespace fs = std::filesystem;
         using Microsoft::WRL::ComPtr;
         const auto root = fs::temp_directory_path() / ("relay-desktop-" + std::to_string(GetCurrentProcessId()));
@@ -59,14 +111,25 @@ int runCommandTests() {
         const auto initialized = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
         check(SUCCEEDED(initialized), "initialize shortcut fixtures");
         auto shortcut = [&](const fs::path& path, const fs::path& target,
-                const wchar_t* arguments = L"", const wchar_t* directory = L"", int show = SW_SHOWNORMAL) {
+                const wchar_t* arguments = L"", const wchar_t* directory = L"", int show = SW_SHOWNORMAL,
+                const wchar_t* appId = nullptr) {
             ComPtr<IShellLinkW> link;
             ComPtr<IPersistFile> file;
             const bool ok = SUCCEEDED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) &&
                 SUCCEEDED(link->SetPath(target.c_str())) && SUCCEEDED(link->SetArguments(arguments)) &&
                 SUCCEEDED(link->SetWorkingDirectory(directory)) && SUCCEEDED(link->SetShowCmd(show)) &&
-                SUCCEEDED(link.As(&file)) && SUCCEEDED(file->Save(path.c_str(), TRUE));
+                SUCCEEDED(link.As(&file));
             check(ok, "write shortcut fixture");
+            if (!ok) return;
+            if (appId) {
+                ComPtr<IPropertyStore> properties;
+                PROPVARIANT identity{};
+                check(SUCCEEDED(InitPropVariantFromString(appId, &identity)) && SUCCEEDED(link.As(&properties)) &&
+                    SUCCEEDED(properties->SetValue(PKEY_AppUserModel_ID, identity)) && SUCCEEDED(properties->Commit()),
+                    "set fixture application identity");
+                PropVariantClear(&identity);
+            }
+            check(SUCCEEDED(file->Save(path.c_str(), TRUE)), "save shortcut fixture");
         };
         shortcut(root / "installed.lnk", root / "fake.exe");
         shortcut(root / "user" / "Duplicate.lnk", root / "fake.exe");
@@ -74,6 +137,8 @@ int runCommandTests() {
         shortcut(root / "public" / "Profile duplicate.lnk", root / "fake.exe", L"--profile Work");
         shortcut(root / "user" / "Directory.lnk", root / "fake.exe", L"", root.c_str());
         shortcut(root / "user" / "Minimized.LNK", root / "fake.exe", L"", L"", SW_SHOWMINNOACTIVE);
+        shortcut(root / "user" / "Identified.lnk", root / "fake.exe", L"--processStart App.exe", L"",
+            SW_SHOWNORMAL, L"relay.fake.identity");
         shortcut(root / "user" / "Broken.lnk", root / "missing.exe");
         shortcut(root / "user" / "Document.lnk", root / "document.txt");
         shortcut(root / "user" / "Folder.lnk", root);
@@ -82,7 +147,18 @@ int runCommandTests() {
         std::ofstream(root / "user" / "Website.url") << "[InternetShortcut]\nURL=https://example.com";
         std::vector<desktop::AppEntry> apps{{"Installed", narrow((root / "installed.lnk").wstring())}};
         desktop::appendDesktopApps(apps, {root / "user", root / "public", root / "absent"});
-        check(apps.size() == 4, "desktop scan filters non-apps, skips nested folders and merges equivalent launch settings");
+        check(apps.size() == 5, "desktop scan filters non-apps, skips nested folders and merges equivalent launch settings");
+        auto identified = std::find_if(apps.begin(), apps.end(), [](const auto& app) { return app.name == "Identified"; });
+        check(identified != apps.end() && identified->appId == "relay.fake.identity", "desktop scan reads shortcut application identity");
+        auto mergedApps = apps;
+        mergedApps.push_back({"Identified", "shell:AppsFolder\\relay.fake.identity", "relay.fake.identity"});
+        std::string identityTarget;
+        std::vector<command::Command> identityCatalog{appCommand(std::move(mergedApps),
+            [&](const auto& target, desktop::AppAction) { identityTarget = target; return std::string{}; })};
+        auto identityResult = command::evaluate(identityCatalog, "Identified");
+        check(identityResult.view.rows.size() == 1 && identityResult.view.rows[0].title == "Identified" &&
+            identityResult.actions[0]().empty() && identityTarget == "shell:AppsFolder\\relay.fake.identity",
+            "application identity merges updater shortcuts with installed apps and keeps the installed target");
         auto profile = std::find_if(apps.begin(), apps.end(), [](const auto& app) { return app.name == "Profile"; });
         check(profile != apps.end() && profile->parsing == narrow((root / "user" / "Profile.lnk").wstring()),
             "desktop app retains original shortcut for launch and icon retrieval");
@@ -91,7 +167,7 @@ int runCommandTests() {
             [&](const std::string& value) { copied = value; return std::string{}; }).empty() &&
             copied == narrow((root / "fake.exe").wstring()), "shortcut Copy Path uses target with a fake clipboard");
         desktop::appendDesktopApps(apps, {root / "user", root / "public"});
-        check(apps.size() == 4, "repeated desktop scans do not duplicate apps");
+        check(apps.size() == 5, "repeated desktop scans do not duplicate apps");
         if (SUCCEEDED(initialized)) CoUninitialize();
         fs::remove_all(root);
     }
@@ -397,7 +473,7 @@ int runCommandTests() {
     auto query = [&](const std::string& value) { return command::evaluate(commands, value); };
     auto home = query("");
     check(home.view.rows.size() == 4 && home.view.spans.empty() && home.view.slots.empty(), "empty input shows only apps");
-    check(home.view.rows[0].title == "Editor (editor1)" && home.view.rows[1].title == "Editor (editor2)" &&
+    check(home.view.rows[0].title == "Editor" && home.view.rows[1].title == "Editor" &&
         home.view.rows[2].title == "Firefox" && home.view.rows[3].title == "Google Chrome", "home apps have stable alphabetical order");
     check(home.actions[0]().empty() && launched == "editor1", "Enter on the initial app row opens that app");
     for (const auto& row : home.view.rows) {
@@ -624,7 +700,7 @@ int runCommandTests() {
         auto result = command::evaluate(catalog, "Quit");
         check(result.view.rows.size() == 5 && previews == 1 && copied.empty() && launched.empty(),
             "matching previews run once without executing actions");
-        check(result.view.rows[0].kind == "App" && result.view.rows[0].subtitle == "Open" &&
+        check(result.view.rows[0].kind == "App" && result.view.rows[0].subtitle.empty() && result.view.rows[0].actionLabel == "Open" &&
             result.view.rows[1].title == "Ready" && result.view.rows[1].kind == "Result" && result.view.rows[1].context == "/sample" &&
             result.view.rows[1].danger && result.view.rows[1].completion.empty() && result.view.spans.empty(),
             "exact app wins ties, preview keeps verb identity and danger without completing bare text");
@@ -881,6 +957,10 @@ int runCommandTests() {
         std::vector<command::Command> catalog{appCommand({{"Editor", "first"}, {"Editor", "second"}},
             [&](const auto& app, desktop::AppAction action) { target = app; operation = action; return failure; })};
         const auto choices = command::evaluate(catalog, "/app ");
+        check(choices.view.rows.size() == 2 && choices.view.rows[0].title == "Editor" &&
+            choices.view.rows[1].title == "Editor" && choices.view.rows[0].subtitle != choices.view.rows[1].subtitle &&
+            choices.view.rows[0].completion != choices.view.rows[1].completion,
+            "distinct same-name apps have clean titles and unique readable completions");
         const std::vector<desktop::AppAction> expected{desktop::AppAction::Open, desktop::AppAction::FileLocation,
             desktop::AppAction::CopyPath, desktop::AppAction::Admin};
         for (const auto& row : choices.view.rows) {
@@ -893,6 +973,22 @@ int runCommandTests() {
                 check(verbs.actions[i]() == failure, "app operation failures retain their recovery message");
                 failure.clear();
             }
+        }
+    }
+    {
+        std::vector<command::Command> catalog{appCommand({
+            {"Editor", "shell:AppsFolder\\editor.work", "editor.work"},
+            {"Editor", "shell:AppsFolder\\editor.personal", "editor.personal"},
+            {"Editor (Installed app)", "third"}},
+            [](const auto&, desktop::AppAction) { return std::string{}; })};
+        check(command::validate(catalog[0]).empty(), "readable duplicate completions cannot collide with real app names");
+        auto choices = command::evaluate(catalog, "/app ");
+        check(choices.view.rows.size() == 3, "same-name apps with distinct Windows identities remain available");
+        for (const auto& row : choices.view.rows) {
+            check(row.title.find("shell:") == std::string::npos && row.completion.find("shell:") == std::string::npos,
+                "shell identities stay out of app titles and completions");
+            check(command::evaluate(catalog, row.completion).actions.size() == 4,
+                "readable app completions still resolve all actions");
         }
     }
     {

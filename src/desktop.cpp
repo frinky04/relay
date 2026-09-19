@@ -16,6 +16,7 @@
 #include <powrprof.h>
 #include <reason.h>
 #include <optional>
+#include <propvarutil.h>
 
 using Microsoft::WRL::ComPtr;
 
@@ -145,6 +146,7 @@ std::string setStartup(bool enabled) {
 namespace {
 struct LaunchSettings {
     std::wstring target, arguments, directory;
+    std::string appId;
     int show = 0;
     DWORD flags = 0;
     bool operator==(const LaunchSettings&) const = default;
@@ -157,20 +159,24 @@ std::wstring pathKey(const std::filesystem::path& path) {
 }
 
 std::optional<LaunchSettings> launchSettings(const std::string& parsing) {
+    // Apps folder items are application identities, not IShellLink objects.
+    if (parsing.starts_with("shell:")) return {};
     ComPtr<IShellLinkW> link;
-    if (parsing.starts_with("shell:")) {
-        ComPtr<IShellItem> item;
-        if (FAILED(SHCreateItemFromParsingName(widen(parsing).c_str(), nullptr, IID_PPV_ARGS(&item))) ||
-            FAILED(item->BindToHandler(nullptr, BHID_SFUIObject, IID_PPV_ARGS(&link)))) return {};
-    } else {
-        ComPtr<IPersistFile> file;
-        if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
-            FAILED(link.As(&file)) || FAILED(file->Load(widen(parsing).c_str(), STGM_READ))) return {};
-    }
+    ComPtr<IPersistFile> file;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))) ||
+        FAILED(link.As(&file)) || FAILED(file->Load(widen(parsing).c_str(), STGM_READ))) return {};
     // Read saved settings only: Resolve can search for moved targets or show UI.
     wchar_t target[MAX_PATH]{}, directory[MAX_PATH]{};
     std::wstring arguments(32768, L'\0');
     LaunchSettings settings;
+    ComPtr<IPropertyStore> properties;
+    PROPVARIANT identity{};
+    if (SUCCEEDED(link.As(&properties)) && SUCCEEDED(properties->GetValue(PKEY_AppUserModel_ID, &identity))) {
+        PWSTR id = nullptr;
+        if (SUCCEEDED(PropVariantToStringAlloc(identity, &id))) settings.appId = narrow(id);
+        CoTaskMemFree(id);
+    }
+    PropVariantClear(&identity);
     ComPtr<IShellLinkDataList> data;
     if (link->GetPath(target, MAX_PATH, nullptr, 0) != S_OK || !target[0] ||
         FAILED(link->GetArguments(arguments.data(), static_cast<int>(arguments.size()))) ||
@@ -209,8 +215,12 @@ void appendDesktopApps(std::vector<AppEntry>& apps, const std::vector<std::files
             const auto parsing = narrow(shortcut.wstring());
             auto settings = launchSettings(parsing);
             if (!settings || std::find(known.begin(), known.end(), *settings) != known.end()) continue;
+            std::string launchKey;
+            if (!settings->flags && settings->show == SW_SHOWNORMAL &&
+                (settings->directory.empty() || settings->directory == pathKey(std::filesystem::path(settings->target).parent_path())))
+                launchKey = narrow(settings->target) + "\n" + narrow(settings->arguments);
+            apps.push_back({narrow(shortcut.stem().wstring()), parsing, settings->appId, std::move(launchKey)});
             known.push_back(std::move(*settings));
-            apps.push_back({narrow(shortcut.stem().wstring()), parsing});
         }
     }
 }
@@ -232,6 +242,23 @@ std::vector<AppEntry> listApps() {
                     AppEntry e;
                     e.name = narrow(disp);
                     e.parsing = "shell:AppsFolder\\" + narrow(parse);
+                    ComPtr<IShellItem2> properties;
+                    PWSTR id = nullptr;
+                    if (SUCCEEDED(item.As(&properties)) && SUCCEEDED(properties->GetString(PKEY_AppUserModel_ID, &id)))
+                        e.appId = narrow(id);
+                    CoTaskMemFree(id);
+                    PWSTR target = nullptr;
+                    if (properties && SUCCEEDED(properties->GetString(PKEY_Link_TargetParsingPath, &target)) && target &&
+                        std::filesystem::path(target).is_absolute()) {
+                        PROPVARIANT arguments{};
+                        if (SUCCEEDED(properties->GetProperty(PKEY_Link_Arguments, &arguments)) &&
+                            (arguments.vt == VT_EMPTY || arguments.vt == VT_LPWSTR)) {
+                            e.launchKey = narrow(pathKey(target)) + "\n" +
+                                (arguments.vt == VT_LPWSTR && arguments.pwszVal ? narrow(arguments.pwszVal) : "");
+                        }
+                        PropVariantClear(&arguments);
+                    }
+                    CoTaskMemFree(target);
                     out.push_back(std::move(e));
                 }
                 if (disp) CoTaskMemFree(disp);

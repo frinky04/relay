@@ -19,6 +19,7 @@ struct Preview {
 struct Choice {
     std::string text, subtitle, iconKey;
     std::string value; // optional canonical argument/completion; defaults to text
+    int searchPenalty = 0; // native app extras rank below main apps
 };
 struct Argument {
     std::string name;
@@ -46,6 +47,7 @@ struct Command {
     bool search = false; // expose complete verbs or first-argument choices in bare search
     // Native app history: order empty input directly, boost typed matches.
     std::function<int(const Choice&)> choiceFrecency;
+    std::function<bool(const Choice&)> choiceVisible; // bare search only; scoped choices remain available
     int recognitionPriority = 0; // higher priorities precede other recognized results; ties retain load order
 };
 struct View {

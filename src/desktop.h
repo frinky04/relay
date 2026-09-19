@@ -13,6 +13,8 @@ namespace desktop {
 struct AppEntry {
     std::string name;
     std::string parsing; // shell:AppsFolder target or shortcut path; also an icon cache key
+    std::string appId; // Windows application identity, when supplied by the shell
+    std::string launchKey; // normalized executable plus exact arguments, when available
 };
 
 struct WindowTarget {

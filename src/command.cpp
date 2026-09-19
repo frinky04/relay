@@ -187,6 +187,8 @@ void choices(Evaluation& out, const Command& cmd, const std::vector<std::string>
     const bool rankChoices = out.view.text.empty() || !needle.empty();
     std::vector<std::pair<Rank, const Choice*>> matches;
     for (const auto& choice : *arg.choices) {
+        const bool bare = out.view.text.empty() || out.view.text.front() != '/';
+        if (bare && cmd.choiceVisible && !cmd.choiceVisible(choice)) continue;
         int score = needle.empty() ? 1 : std::max(fuzzy::score(needle, choice.text), fuzzy::score(needle, choice.subtitle));
         if (!score) continue;
         const bool exact = equal(needle, choice.text) || equal(needle, choice.subtitle);
@@ -196,6 +198,7 @@ void choices(Evaluation& out, const Command& cmd, const std::vector<std::string>
             // apps. Typed matches keep the existing boost capped at 200.
             score += out.view.text.empty() ? history : history / 10;
         }
+        if (bare) score -= choice.searchPenalty;
         matches.push_back({{exact, score}, &choice});
     }
     // Global search ranks all commands together; retain declaration order for ties.
@@ -280,6 +283,7 @@ void search(Evaluation& out, const std::vector<Command>& commands) {
             if (choiceSearch) {
                 choices(found, *cmd, {}, out.view.text, {0, out.view.text.size()}, &ranks);
                 for (auto& row : found.view.rows) {
+                    if (cmd->name == "app") continue;
                     row.subtitle = row.actionLabel + (row.subtitle.empty() ? "" : " — " + row.subtitle);
                     row.context = "/" + cmd->name;
                 }
