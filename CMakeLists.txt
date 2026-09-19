@@ -52,7 +52,7 @@ add_executable(relay WIN32
 
 target_include_directories(relay PRIVATE src ${LUA_INCLUDE_DIR})
 target_link_libraries(relay PRIVATE relay_core imgui::imgui
-  d3d11 dxgi d3dcompiler dcomp dwmapi shell32 ole32 shlwapi propsys shcore gdi32 user32 uuid urlmon)
+  d3d11 dxgi d3dcompiler dcomp dwmapi shell32 ole32 shlwapi propsys shcore gdi32 user32 uuid urlmon windowscodecs)
 target_compile_definitions(relay PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
   SOL_ALL_SAFETIES_ON=1 RELAY_VERSION="${PROJECT_VERSION}")
 if(MSVC)
@@ -81,7 +81,7 @@ add_executable(relay_test
   src/icons.cpp
   tests/updates.cpp
 )
-target_link_libraries(relay_test PRIVATE relay_core d3d11)
+target_link_libraries(relay_test PRIVATE relay_core d3d11 windowscodecs)
 target_compile_definitions(relay_test PRIVATE RELAY_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 if(MSVC)
   target_compile_options(relay_test PRIVATE /W3 /utf-8 /bigobj /MP)

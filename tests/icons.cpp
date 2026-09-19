@@ -11,6 +11,39 @@ int runIconTests() {
     };
     namespace fs = std::filesystem;
     using Clock = IconCache::Clock;
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    check(SUCCEEDED(com), "COM initializes for the Windows image scaler");
+    {
+        int width = 2, height = 2;
+        // One opaque red pixel, three invisible blue pixels.
+        std::vector<uint8_t> image{0, 0, 255, 255, 255, 0, 0, 0,
+            255, 0, 0, 0, 255, 0, 0, 0};
+        check(IconCache::downsample(width, height, image, 1) && width == 1 && height == 1 &&
+            image[0] == 0 && image[1] == 0 && image[2] >= 254 && image[3] >= 63 && image[3] <= 64,
+            "downsampling preserves red coverage without invisible blue bleeding into the edge");
+    }
+    {
+        int width = 9, height = 1;
+        std::vector<uint8_t> image(9 * 4, 0);
+        for (int x = 0; x < 9; ++x) image[x * 4 + 3] = 255;
+        image[0] = image[1] = image[2] = 255;
+        check(IconCache::downsample(width, height, image, 1) && width == 1 && height == 1 &&
+            image[0] >= 28 && image[0] <= 29 && image[1] == image[0] && image[2] == image[0] && image[3] == 255,
+            "strong reduction includes edge detail that a center bilinear sample would miss");
+    }
+    {
+        int width = 5, height = 3;
+        std::vector<uint8_t> image(5 * 3 * 4, 255);
+        check(IconCache::downsample(width, height, image, 2) && width == 2 && height == 1 &&
+            image == std::vector<uint8_t>(8, 255), "odd rectangular sources retain aspect and solid color");
+        const auto original = image;
+        check(IconCache::downsample(width, height, image, 18) && width == 2 && height == 1 && image == original,
+            "small sources are not upscaled or converted unnecessarily");
+        check(!IconCache::downsample(width, height, image, 0) && image == original,
+            "invalid target size leaves input intact");
+        image.pop_back();
+        check(!IconCache::downsample(width, height, image, 1), "incomplete source pixels cannot reach the scaler");
+    }
     const auto directory = fs::temp_directory_path() / ("relay-icons-" + std::to_string(GetCurrentProcessId()));
     fs::create_directories(directory);
     IconCache cache;
@@ -81,5 +114,6 @@ int runIconTests() {
     cache.clear();
     fs::remove(path);
     fs::remove(directory);
+    if (SUCCEEDED(com)) CoUninitialize();
     return failures;
 }

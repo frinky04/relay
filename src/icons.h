@@ -78,5 +78,6 @@ private:
     bool loadPixels(const std::string& key, int size, int& w, int& h, std::vector<uint8_t>& bgra, Clock::time_point& expires);
     bool loadFromDisk(const std::string& key, int size, int& w, int& h, std::vector<uint8_t>& bgra, Clock::time_point& expires);
     void saveToDisk(const std::string& key, int size, int w, int h, const std::vector<uint8_t>& bgra);
+    static bool downsample(int& w, int& h, std::vector<uint8_t>& bgra, int targetSize);
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> makeTexture(int w, int h, const std::vector<uint8_t>& bgra);
 };

@@ -6,6 +6,8 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <algorithm>
+#include <wincodec.h>
 
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
@@ -123,7 +125,10 @@ void IconCache::worker() {
         std::vector<uint8_t> px;
         ComPtr<ID3D11ShaderResourceView> srv;
         auto expires = Clock::now() + CACHE_LIFETIME;
-        if (SUCCEEDED(com) && loadPixels(key, size, w, h, px, expires)) srv = makeTexture(w, h, px);
+        // Shell requests are at 2x display size. Keep the original pixels in
+        // the disk cache; reduce them on the worker before uploading.
+        if (SUCCEEDED(com) && loadPixels(key, size, w, h, px, expires) &&
+            downsample(w, h, px, (size + 1) / 2)) srv = makeTexture(w, h, px);
         if (!srv) expires = Clock::now() + RETRY_DELAY;
 
         std::lock_guard lk(m_mtx);
@@ -207,6 +212,37 @@ bool IconCache::loadPixels(const std::string& key, int size, int& w, int& h, std
     // RGB by alpha again corrupts antialiased edges (and can overflow a byte).
     expires = Clock::now() + CACHE_LIFETIME;
     saveToDisk(key, size, w, h, bgra);
+    return true;
+}
+
+bool IconCache::downsample(int& w, int& h, std::vector<uint8_t>& bgra, int targetSize) {
+    if (w <= 0 || h <= 0 || w > 512 || h > 512 || targetSize <= 0 ||
+        bgra.size() != (size_t)w * h * 4) return false;
+    const int extent = std::max(w, h);
+    if (extent <= targetSize) return true; // Never upscale a small Shell icon.
+    const UINT width = std::max(1, (w * targetSize + extent / 2) / extent);
+    const UINT height = std::max(1, (h * targetSize + extent / 2) / extent);
+
+    ComPtr<IWICImagingFactory> factory;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&factory)))) return false;
+    ComPtr<IWICBitmap> source;
+    if (FAILED(factory->CreateBitmapFromMemory(w, h, GUID_WICPixelFormat32bppBGRA,
+        w * 4, (UINT)bgra.size(), bgra.data(), &source))) return false;
+
+    // Weight colors by coverage while averaging, so transparent RGB cannot
+    // bleed into edges. Convert back only after filtering for ImGui's blend.
+    ComPtr<IWICBitmapSource> premultiplied;
+    if (FAILED(WICConvertBitmapSource(GUID_WICPixelFormat32bppPBGRA, source.Get(), &premultiplied))) return false;
+    ComPtr<IWICBitmapScaler> scaler;
+    if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
+        FAILED(scaler->Initialize(premultiplied.Get(), width, height, WICBitmapInterpolationModeFant))) return false;
+    ComPtr<IWICBitmapSource> straight;
+    if (FAILED(WICConvertBitmapSource(GUID_WICPixelFormat32bppBGRA, scaler.Get(), &straight))) return false;
+    std::vector<uint8_t> reduced((size_t)width * height * 4);
+    if (FAILED(straight->CopyPixels(nullptr, width * 4, (UINT)reduced.size(), reduced.data()))) return false;
+    w = (int)width; h = (int)height;
+    bgra = std::move(reduced);
     return true;
 }
 
