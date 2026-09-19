@@ -993,7 +993,7 @@ void App::drawUi() {
 
     // --- footer: count, then what Enter / Tab do for the selected row, then Esc
     dl->PushClipRect(ImVec2(0, listTop), ImVec2(W, m_animH), true);
-    dl->AddRectFilled(ImVec2(0, footY), ImVec2(W, m_animH), theme::rgb(theme::BG));
+    dl->AddRectFilled(ImVec2(0, footY), ImVec2(W, m_animH), theme::rgb(theme::BG_INPUT));
     dl->AddLine(ImVec2(0, footY), ImVec2(W, footY), theme::rgb(theme::BORDER));
     const float fty = textY(footY, footH, fsSm);
     if (n) {

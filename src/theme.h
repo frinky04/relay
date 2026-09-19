@@ -11,7 +11,7 @@ inline ImU32 rgb(unsigned hex, float a = 1.0f) {
 
 // Semantic tokens.
 constexpr unsigned BG            = 0x0b0c0e; // window background
-constexpr unsigned BG_INPUT      = 0x121416; // query field surface
+constexpr unsigned BG_INPUT      = 0x121416; // elevated query field and footer surface
 constexpr unsigned BG_SELECTED   = 0x1e2123; // selected row
 constexpr unsigned BORDER        = 0x2c2e31; // separators, window edge
 constexpr unsigned TEXT          = 0xdee2e5; // primary text        (15.0:1 on BG)

@@ -6,6 +6,7 @@
 //   ACCENT_TEXT #94bce4 on BG  9.85  on BG_INPUT  9.30  on BG_SELECTED  8.15
 //   DANGER     #ed756e  on BG  6.87  on BG_INPUT  6.48  on BG_SELECTED  5.68
 //   BORDER vs BG 1.44, BG_SELECTED vs BG 1.21
+// Footer: count and hints use TEXT_MUTED on BG_INPUT (5.47).
 // Detail rows: primary title uses TEXT on BG (15.02) / BG_SELECTED (12.43);
 // secondary line uses TEXT_2 on BG (7.36) / BG_SELECTED (6.09), at FONT_SIZE_SM.
 // Color swatches occupy the icon gutter and carry no text. Their checker uses
