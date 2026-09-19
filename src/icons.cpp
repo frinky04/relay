@@ -10,6 +10,9 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
+// Version 1 had no version field and incorrectly unpremultiplied Shell icons.
+static constexpr uint32_t ICON_CACHE_VERSION = 2;
+
 IconCache& IconCache::instance() { static IconCache c; return c; }
 
 void IconCache::init(ID3D11Device* dev, int px) {
@@ -106,6 +109,9 @@ static std::wstring diskName(const std::string& key) {
 bool IconCache::loadFromDisk(const std::string& key, int& w, int& h, std::vector<uint8_t>& bgra) {
     std::ifstream in(diskName(key), std::ios::binary);
     if (!in) return false;
+    uint32_t version = 0;
+    in.read((char*)&version, 4);
+    if (!in || version != ICON_CACHE_VERSION) return false;
     uint32_t ww = 0, hh = 0;
     in.read((char*)&ww, 4); in.read((char*)&hh, 4);
     if (!in || ww == 0 || hh == 0 || ww > 512 || hh > 512) return false;
@@ -120,6 +126,7 @@ void IconCache::saveToDisk(const std::string& key, int w, int h, const std::vect
     std::ofstream out(diskName(key), std::ios::binary | std::ios::trunc);
     if (!out) return;
     uint32_t ww = w, hh = h;
+    out.write((const char*)&ICON_CACHE_VERSION, 4);
     out.write((const char*)&ww, 4); out.write((const char*)&hh, 4);
     out.write((const char*)bgra.data(), bgra.size());
 }
@@ -149,15 +156,8 @@ bool IconCache::loadPixels(const std::string& key, int& w, int& h, std::vector<u
     ReleaseDC(nullptr, dc);
     DeleteObject(hbm);
 
-    // Shell hands back premultiplied alpha; ImGui blends straight alpha.
-    for (size_t i = 0; i < bgra.size(); i += 4) {
-        uint8_t a = bgra[i + 3];
-        if (a && a != 255) {
-            bgra[i + 0] = (uint8_t)(bgra[i + 0] * 255 / a);
-            bgra[i + 1] = (uint8_t)(bgra[i + 1] * 255 / a);
-            bgra[i + 2] = (uint8_t)(bgra[i + 2] * 255 / a);
-        }
-    }
+    // ICONONLY pixels already use straight alpha, as ImGui expects. Dividing
+    // RGB by alpha again corrupts antialiased edges (and can overflow a byte).
     saveToDisk(key, w, h, bgra);
     return true;
 }

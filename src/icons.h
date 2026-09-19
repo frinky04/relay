@@ -20,7 +20,8 @@
 // first so rows on screen beat rows scrolled past. prewarm() feeds a low
 // priority list so the whole app index is resident before it is ever asked for.
 //
-// Disk cache: %APPDATA%\relay\icons\<hash>.bgra  (u32 w, u32 h, BGRA rows).
+// Disk cache: %APPDATA%\relay\icons\<hash>.bgra
+// (u32 version, u32 w, u32 h, straight-alpha BGRA rows).
 class IconCache {
 public:
     static IconCache& instance();
