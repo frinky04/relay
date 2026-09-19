@@ -1,8 +1,7 @@
 #pragma once
 #include <imgui.h>
 
-// Palette. Primitives are OKLCH-derived (neutral hue 250, chroma 0.006;
-// accent hue 250, matching the neutral). Every rendered pair measured, see theme.cpp header comment.
+// Monochrome palette. Every rendered pair measured, see theme.cpp header comment.
 namespace theme {
 
 inline ImU32 rgb(unsigned hex, float a = 1.0f) {
@@ -10,16 +9,17 @@ inline ImU32 rgb(unsigned hex, float a = 1.0f) {
 }
 
 // Semantic tokens.
-constexpr unsigned BG            = 0x0b0c0e; // window background
-constexpr unsigned BG_INPUT      = 0x121416; // elevated query field and footer surface
-constexpr unsigned BG_SELECTED   = 0x1e2123; // selected row
-constexpr unsigned BORDER        = 0x2c2e31; // separators, window edge
-constexpr unsigned TEXT          = 0xdee2e5; // primary text        (15.0:1 on BG)
-constexpr unsigned TEXT_2        = 0x9c9fa2; // secondary text      (7.4:1 on BG)
-constexpr unsigned TEXT_MUTED    = 0x898c90; // hints, kind tags    (5.8:1 on BG, 4.8:1 on BG_SELECTED)
-constexpr unsigned ACCENT        = 0x7fa7cf; // solid selection marker and underlines
-constexpr unsigned ACCENT_TEXT   = 0x94bce4; // lighter for antialiased text and glyphs to retain the accent's brightness
-constexpr unsigned DANGER        = 0xed756e; // destructive verbs (6.9:1 on BG, 5.7:1 on BG_SELECTED)
+constexpr unsigned BG            = 0x0c0c0c; // window background
+constexpr unsigned BG_INPUT      = 0x141414; // elevated query field and footer surface
+constexpr unsigned BG_SELECTED   = 0x242424; // selected row
+constexpr unsigned BORDER        = 0x303030; // window edge, scrollbar, swatch checker
+constexpr unsigned DIVIDER       = 0x242424; // subtle internal surface separators
+constexpr unsigned TEXT          = 0xe2e2e2; // primary text        (15.1:1 on BG)
+constexpr unsigned TEXT_2        = 0xa0a0a0; // secondary text      (7.5:1 on BG)
+constexpr unsigned TEXT_MUTED    = 0x909090; // hints, kind tags    (6.1:1 on BG, 4.9:1 on BG_SELECTED)
+constexpr unsigned ACCENT        = 0xb0b0b0; // partial-match underlines and text selection
+constexpr unsigned ACCENT_TEXT   = 0xd0d0d0; // lighter for antialiased text and glyphs to retain the accent's brightness
+constexpr unsigned DANGER        = 0xf0f0f0; // destructive verbs (17.2:1 on BG, 13.6:1 on BG_SELECTED)
 
 // Layout metrics (logical px, scaled by DPI at runtime). Width and row count come from config.
 constexpr float INPUT_H       = 44.0f;

@@ -868,7 +868,7 @@ void App::drawUi() {
 
     if (m_animH <= inputH + 0.5f) { ImGui::End(); return; }
 
-    dl->AddLine(ImVec2(0, inputH), ImVec2(W, inputH), theme::rgb(theme::BORDER));
+    dl->AddLine(ImVec2(0, inputH), ImVec2(W, inputH), theme::rgb(theme::DIVIDER));
     const float listTop = inputH + 1.0f;
     const float footY = std::max(listTop, m_animH - footH);
     const float kindRight = W - padX;
@@ -885,8 +885,6 @@ void App::drawUi() {
         const float sy = listTop + layout.position(m_animSel) - layout.position(m_animScroll);
         const float bottom = listTop + layout.position(m_animSel + 1) - layout.position(m_animScroll);
         dl->AddRectFilled(ImVec2(0, sy), ImVec2(W, bottom), theme::rgb(theme::BG_SELECTED));
-        dl->AddRectFilled(ImVec2(0, sy), ImVec2(2.0f * S, bottom),
-            theme::rgb(m_results[m_selected].danger ? theme::DANGER : theme::ACCENT));
     }
 
     const int firstIdx = std::max(0, (int)std::floor(m_animScroll));
@@ -994,7 +992,7 @@ void App::drawUi() {
     // --- footer: count, then what Enter / Tab do for the selected row, then Esc
     dl->PushClipRect(ImVec2(0, listTop), ImVec2(W, m_animH), true);
     dl->AddRectFilled(ImVec2(0, footY), ImVec2(W, m_animH), theme::rgb(theme::BG_INPUT));
-    dl->AddLine(ImVec2(0, footY), ImVec2(W, footY), theme::rgb(theme::BORDER));
+    dl->AddLine(ImVec2(0, footY), ImVec2(W, footY), theme::rgb(theme::DIVIDER));
     const float fty = textY(footY, footH, fsSm);
     if (n) {
         char buf[32];
@@ -1018,7 +1016,16 @@ void App::drawUi() {
         const ImVec2 hs = font->CalcTextSizeA(fsSm, FLT_MAX, 0, hints[i].c_str());
         hx -= hs.x;
         if (hx < padX + 60.0f * S) break; // out of room: drop the leftmost hints
-        dl->AddText(font, fsSm, ImVec2(hx, fty), theme::rgb(theme::TEXT_MUTED), hints[i].c_str());
+        const char* begin = hints[i].c_str();
+        const auto keyEnd = hints[i].find(' ');
+        if (keyEnd != std::string::npos) {
+            const char* end = begin + keyEnd;
+            dl->AddText(font, fsSm, ImVec2(hx, fty), theme::rgb(theme::TEXT), begin, end);
+            const float keyWidth = font->CalcTextSizeA(fsSm, FLT_MAX, 0, begin, end).x;
+            dl->AddText(font, fsSm, ImVec2(hx + keyWidth, fty), theme::rgb(theme::TEXT_MUTED), end);
+        } else {
+            dl->AddText(font, fsSm, ImVec2(hx, fty), theme::rgb(theme::TEXT_MUTED), begin);
+        }
         hx -= gapM;
     }
     dl->PopClipRect();
@@ -1041,7 +1048,9 @@ void App::frame() {
     const int w = (int)(m_config.width * m_scale);
     if (h != m_winH || w != m_winW) resizeTo(w, h);
 
-    const float bg[4] = { 0x0b / 255.0f, 0x0c / 255.0f, 0x0e / 255.0f, 1.0f };
+    const float bg[4] = { ((theme::BG >> 16) & 0xff) / 255.0f,
+                          ((theme::BG >> 8) & 0xff) / 255.0f,
+                          (theme::BG & 0xff) / 255.0f, 1.0f };
     m_ctx->OMSetRenderTargets(1, m_rtv.GetAddressOf(), nullptr);
     m_ctx->ClearRenderTargetView(m_rtv.Get(), bg);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());

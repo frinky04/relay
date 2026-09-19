@@ -1,14 +1,17 @@
 // Contrast (WCAG, measured):
-//   TEXT       #dee2e5  on BG 15.02  on BG_INPUT 14.17  on BG_SELECTED 12.43
-//   TEXT_2     #9c9fa2  on BG  7.36  on BG_INPUT  6.94  on BG_SELECTED  6.09
-//   TEXT_MUTED #898c90  on BG  5.79  on BG_INPUT  5.47  on BG_SELECTED  4.79
-//   ACCENT     #7fa7cf  on BG  7.76  on BG_INPUT  7.32  on BG_SELECTED  6.42
-//   ACCENT_TEXT #94bce4 on BG  9.85  on BG_INPUT  9.30  on BG_SELECTED  8.15
-//   DANGER     #ed756e  on BG  6.87  on BG_INPUT  6.48  on BG_SELECTED  5.68
-//   BORDER vs BG 1.44, BG_SELECTED vs BG 1.21
-// Footer: count and hints use TEXT_MUTED on BG_INPUT (5.47).
-// Detail rows: primary title uses TEXT on BG (15.02) / BG_SELECTED (12.43);
-// secondary line uses TEXT_2 on BG (7.36) / BG_SELECTED (6.09), at FONT_SIZE_SM.
+//   TEXT       #e2e2e2  on BG 15.10  on BG_INPUT 14.22  on BG_SELECTED 11.98
+//   TEXT_2     #a0a0a0  on BG 7.48  on BG_INPUT 7.04  on BG_SELECTED 5.94
+//   TEXT_MUTED #909090  on BG 6.13  on BG_INPUT 5.77  on BG_SELECTED 4.86
+//   ACCENT     #b0b0b0  on BG 9.02  on BG_INPUT 8.49  on BG_SELECTED 7.16
+//   ACCENT_TEXT#d0d0d0  on BG 12.68  on BG_INPUT 11.94  on BG_SELECTED 10.06
+//   DANGER     #f0f0f0  on BG 17.17  on BG_INPUT 16.17  on BG_SELECTED 13.62
+//   BORDER vs BG 1.48, BG_SELECTED vs BG 1.26
+//   DIVIDER vs BG 1.26, vs BG_INPUT 1.19, vs BG_SELECTED 1.00 (no text).
+// Footer: keys use TEXT on BG_INPUT (14.22); count/actions use TEXT_MUTED (5.77).
+// Detail rows: primary title uses TEXT on BG (15.10) / BG_SELECTED (11.98);
+// secondary line uses TEXT_2 on BG (7.48) / BG_SELECTED (5.94), at FONT_SIZE_SM.
+// Errors/destructive actions use DANGER; existing ! glyphs, error underlines and
+// confirmation hints retain their meaning without hue.
 // Color swatches occupy the icon gutter and carry no text. Their checker uses
 // BG_INPUT/BORDER and their outline uses TEXT_MUTED; all text/background pairs stay as above.
 #include "theme.h"
