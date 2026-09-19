@@ -77,15 +77,17 @@ add_executable(relay_test
   tests/calculator_formats.cpp
   tests/datetime.cpp
   tests/frecency.cpp
+  tests/icons.cpp
+  src/icons.cpp
   tests/updates.cpp
 )
-target_link_libraries(relay_test PRIVATE relay_core)
+target_link_libraries(relay_test PRIVATE relay_core d3d11)
 target_compile_definitions(relay_test PRIVATE RELAY_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 if(MSVC)
   target_compile_options(relay_test PRIVATE /W3 /utf-8 /bigobj /MP)
 endif()
 enable_testing()
-foreach(suite support config watcher commands calculator datetime frecency updates)
+foreach(suite support config watcher commands calculator datetime frecency updates icons)
   add_test(NAME ${suite} COMMAND relay_test ${suite})
 endforeach()
 

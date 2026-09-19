@@ -1,4 +1,5 @@
 #pragma once
+int runIconTests();
 int runCalculatorTests();
 int runCalculatorFormatTests();
 int runUpdateTests();

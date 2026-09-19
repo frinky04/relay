@@ -690,6 +690,7 @@ static int caretCallback(ImGuiInputTextCallbackData* d) {
 }
 
 void App::drawUi() {
+    IconCache::instance().beginFrame((int)(theme::ICON_SZ * m_scale * 2));
     const float S = m_scale;
     const float W = m_config.width * S;
     const int MAX_ROWS = m_config.maxRows;

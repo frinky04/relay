@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <d3d11.h>
 #include <wrl/client.h>
 
@@ -16,11 +18,12 @@
 // The UI thread never touches the shell: get() is a map lookup that enqueues a
 // request on miss. Worker threads resolve icons (disk cache first, then
 // IShellItemImageFactory), create the D3D texture themselves (device resource
-// creation is thread-safe), and publish it. Requests are served most-recent
+// creation is thread-safe). beginFrame publishes results before drawing.
+// Requests are served most-recent
 // first so rows on screen beat rows scrolled past. prewarm() feeds a low
 // priority list so the whole app index is resident before it is ever asked for.
 //
-// Disk cache: %APPDATA%\relay\icons\<hash>.bgra
+// Disk cache: %APPDATA%\relay\icons\<hash>-<size>.bgra
 // (u32 version, u32 w, u32 h, straight-alpha BGRA rows).
 class IconCache {
 public:
@@ -29,21 +32,38 @@ public:
     void init(ID3D11Device* dev, int pixelSize);
     void shutdown();
 
+    // UI thread, before building draw commands: apply completed loads and DPI.
+    void beginFrame(int pixelSize);
+
     // UI thread. Returns texture or nullptr; a miss queues a high-priority load.
     ID3D11ShaderResourceView* get(const std::string& key);
     // Any thread. Queue keys for background loading, lowest priority.
     void prewarm(std::vector<std::string> keys);
-    // Drop everything (memory only; disk cache stays).
+    // UI thread, outside drawing. Drop memory entries and invalidate in-flight loads.
     void clear();
 
 private:
+    friend int runIconTests();
+    using Clock = std::chrono::steady_clock;
+    static constexpr auto CACHE_LIFETIME = std::chrono::hours(24);
+    static constexpr auto RETRY_DELAY = std::chrono::seconds(30);
     struct Entry {
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
         enum { Cold, Queued, Loading, Ready, Failed } state = Queued;
         std::list<std::string>::iterator queued;
+        Clock::time_point refreshAt{};
+    };
+    struct Result {
+        std::string key;
+        uint64_t generation;
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv;
+        Clock::time_point refreshAt;
     };
     Microsoft::WRL::ComPtr<ID3D11Device> m_dev;
     int m_px = 36;
+    uint64_t m_generation = 0;
+    std::filesystem::path m_directory;
+    std::vector<Result> m_completed;
 
     std::mutex m_mtx;
     std::condition_variable m_cv;
@@ -54,8 +74,9 @@ private:
     std::atomic<bool> m_stop{ false };
 
     void worker();
-    bool loadPixels(const std::string& key, int& w, int& h, std::vector<uint8_t>& bgra);
-    bool loadFromDisk(const std::string& key, int& w, int& h, std::vector<uint8_t>& bgra);
-    void saveToDisk(const std::string& key, int w, int h, const std::vector<uint8_t>& bgra);
+    std::filesystem::path diskName(const std::string& key, int size) const;
+    bool loadPixels(const std::string& key, int size, int& w, int& h, std::vector<uint8_t>& bgra, Clock::time_point& expires);
+    bool loadFromDisk(const std::string& key, int size, int& w, int& h, std::vector<uint8_t>& bgra, Clock::time_point& expires);
+    void saveToDisk(const std::string& key, int size, int w, int h, const std::vector<uint8_t>& bgra);
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> makeTexture(int w, int h, const std::vector<uint8_t>& bgra);
 };
