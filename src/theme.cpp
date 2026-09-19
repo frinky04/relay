@@ -9,7 +9,8 @@
 //   DIVIDER vs BG 1.26, vs BG_INPUT 1.19, vs BG_SELECTED 1.00 (no text).
 // Footer: keys use TEXT on BG_INPUT (14.22); count/actions use TEXT_MUTED (5.77).
 // Alt keycaps: TEXT on BG_INPUT (14.22), independent of selection.
-// Keycap fills, outlines and digits share the existing shortcut fade.
+// Keycap fills, outlines and digits follow only the Alt fade.
+// Unmapped rows have empty keycaps; scrolling does not hide or dim them.
 // Detail rows: primary title uses TEXT on BG (15.10) / BG_SELECTED (11.98);
 // secondary line uses TEXT_2 on BG (7.48) / BG_SELECTED (5.94), at FONT_SIZE_SM.
 // Errors/destructive actions use DANGER red, reinforced by ! glyphs, error

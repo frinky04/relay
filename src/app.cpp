@@ -991,18 +991,20 @@ void App::drawUi() {
             const ImVec2 gsz = font->CalcTextSizeA(fs, FLT_MAX, 0, glyph);
             dl->AddText(ImVec2(padX + (iconSz - gsz.x) * 0.5f, titleY), theme::rgb(glyphCol, 1.0f - altAlpha), glyph);
         }
-        if (digitAlpha > 0.0f) {
-            const char d[2] = { (char)('0' + digit), 0 };
+        if (altAlpha > 0.0f) {
             const float keyY = titleY + (fs - iconSz) * 0.5f;
             const ImVec2 keyMin(padX, keyY), keyMax(padX + iconSz, keyY + iconSz);
             const float rounding = gapS * 0.25f;
             dl->AddRectFilled(keyMin, keyMax,
-                theme::rgb(theme::BG_INPUT, digitAlpha), rounding);
+                theme::rgb(theme::BG_INPUT, altAlpha), rounding);
             dl->AddRect(keyMin, keyMax,
-                theme::rgb(theme::BORDER, digitAlpha), rounding);
-            const ImVec2 dsz = font->CalcTextSizeA(fsSm, FLT_MAX, 0, d);
-            dl->AddText(font, fsSm, ImVec2(padX + (iconSz - dsz.x) * 0.5f, textY(keyY, iconSz, fsSm)),
-                theme::rgb(theme::TEXT, digitAlpha), d);
+                theme::rgb(theme::BORDER, altAlpha), rounding);
+            if (digitAlpha > 0.0f) {
+                const char d[2] = { (char)('0' + digit), 0 };
+                const ImVec2 dsz = font->CalcTextSizeA(fsSm, FLT_MAX, 0, d);
+                dl->AddText(font, fsSm, ImVec2(padX + (iconSz - dsz.x) * 0.5f, textY(keyY, iconSz, fsSm)),
+                    theme::rgb(theme::TEXT, digitAlpha), d);
+            }
         }
 
         // Right edge: the command noun for rows found outside their command.
