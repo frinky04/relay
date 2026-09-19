@@ -4,14 +4,16 @@
 //   TEXT_MUTED #909090  on BG 6.13  on BG_INPUT 5.77  on BG_SELECTED 4.86
 //   ACCENT     #b0b0b0  on BG 9.02  on BG_INPUT 8.49  on BG_SELECTED 7.16
 //   ACCENT_TEXT#d0d0d0  on BG 12.68  on BG_INPUT 11.94  on BG_SELECTED 10.06
-//   DANGER     #f0f0f0  on BG 17.17  on BG_INPUT 16.17  on BG_SELECTED 13.62
+//   DANGER     #ed756e  on BG 6.87  on BG_INPUT 6.47  on BG_SELECTED 5.45
 //   BORDER vs BG 1.48, BG_SELECTED vs BG 1.26
 //   DIVIDER vs BG 1.26, vs BG_INPUT 1.19, vs BG_SELECTED 1.00 (no text).
 // Footer: keys use TEXT on BG_INPUT (14.22); count/actions use TEXT_MUTED (5.77).
+// Alt keycaps: TEXT on BG_INPUT (14.22), independent of selection.
+// Keycap fills, outlines and digits share the existing shortcut fade.
 // Detail rows: primary title uses TEXT on BG (15.10) / BG_SELECTED (11.98);
 // secondary line uses TEXT_2 on BG (7.48) / BG_SELECTED (5.94), at FONT_SIZE_SM.
-// Errors/destructive actions use DANGER; existing ! glyphs, error underlines and
-// confirmation hints retain their meaning without hue.
+// Errors/destructive actions use DANGER red, reinforced by ! glyphs, error
+// underlines and confirmation hints. Other interface colors remain monochrome.
 // Color swatches occupy the icon gutter and carry no text. Their checker uses
 // BG_INPUT/BORDER and their outline uses TEXT_MUTED; all text/background pairs stay as above.
 #include "theme.h"

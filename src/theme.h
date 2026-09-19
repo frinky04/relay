@@ -1,7 +1,7 @@
 #pragma once
 #include <imgui.h>
 
-// Monochrome palette. Every rendered pair measured, see theme.cpp header comment.
+// Monochrome palette with semantic danger red. Every rendered pair measured, see theme.cpp header comment.
 namespace theme {
 
 inline ImU32 rgb(unsigned hex, float a = 1.0f) {
@@ -19,7 +19,7 @@ constexpr unsigned TEXT_2        = 0xa0a0a0; // secondary text      (7.5:1 on BG
 constexpr unsigned TEXT_MUTED    = 0x909090; // hints, kind tags    (6.1:1 on BG, 4.9:1 on BG_SELECTED)
 constexpr unsigned ACCENT        = 0xb0b0b0; // partial-match underlines and text selection
 constexpr unsigned ACCENT_TEXT   = 0xd0d0d0; // lighter for antialiased text and glyphs to retain the accent's brightness
-constexpr unsigned DANGER        = 0xf0f0f0; // destructive verbs (17.2:1 on BG, 13.6:1 on BG_SELECTED)
+constexpr unsigned DANGER        = 0xed756e; // errors, destructive verbs (6.9:1 on BG, 5.5:1 on BG_SELECTED)
 
 // Layout metrics (logical px, scaled by DPI at runtime). Width and row count come from config.
 constexpr float INPUT_H       = 44.0f;

@@ -72,6 +72,9 @@ private:
     std::vector<MenuRow> m_results;
     uint64_t m_rowsRevision = 0;
     int m_selected = 0;
+    int m_firstVisible = 0; // logical viewport, independent of hover and animation
+    float m_wheelRemainder = 0.0f;
+    bool m_manualScroll = false;
     bool m_focusInput = false;
     bool m_caretToEnd = false;
     bool m_redrawInput = false;

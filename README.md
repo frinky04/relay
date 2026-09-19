@@ -14,7 +14,7 @@ Relay finds installed apps and application shortcuts on your desktop. Run `/rela
 
 To hide an app from search, complete its name with Tab and choose **Hide from Search** under `/app`. Hidden apps remain available through `/app`; choose **Show in Search** to restore one. These preferences are saved in `%APPDATA%\relay\hidden-apps.tsv`, beside launch history.
 
-Type `/` to list commands. Use **Up/Down** to select a result and **Tab** to complete it. **Shift+Enter** runs the selection and keeps Relay open. **Escape** hides Relay; `/relay Quit` exits it.
+Type `/` to list commands. Use **Up/Down** to select a result, **Page Up/Down** to move a page, and **Tab** to complete it. Scroll the list with a mouse wheel or trackpad. **Shift+Enter** runs the selection and keeps Relay open. **Escape** hides Relay; `/relay Quit` exits it.
 
 | Type | Action |
 | --- | --- |

@@ -28,6 +28,75 @@ int runSupportTests() {
             "empty and replaced lists safely clamp animated positions");
     }
 
+    {
+        int first = 0;
+        for (int selected = 0; selected < 20; ++selected)
+            first = menuViewportStart(first, selected, 40, 9, true);
+        check(first == 11, "down navigation scrolls only after crossing the bottom edge");
+        for (int selected = 18; selected >= 11; --selected)
+            first = menuViewportStart(first, selected, 40, 9, true);
+        check(first == 11, "reversing direction walks up within the existing viewport");
+        first = menuViewportStart(first, 10, 40, 9, true);
+        check(first == 10, "crossing the top edge scrolls only one row");
+        check(menuViewportStart(first, 14, 40, 9, false) == 10 &&
+              menuViewportStart(first, 9, 40, 9, false) == 10,
+            "hover preserves the viewport including a trailing animated row");
+        check(menuViewportStart(31, 0, 40, 9, true) == 0 &&
+              menuViewportStart(0, 39, 40, 9, true) == 31,
+            "wrapping targets the opposite end of the list");
+        check(menuViewportStart(31, 9, 10, 9, false) == 1 &&
+              menuViewportStart(31, 0, 0, 9, false) == 0 &&
+              menuViewportStart(31, 3, 4, 9, true) == 0,
+            "shrinking, empty and short lists clamp the viewport");
+        check(menuViewportStart(31, 39, 40, 12, false) == 28,
+            "increasing visible row count clamps the viewport at the end");
+    }
+
+    {
+        float remainder = 0;
+        int first = 0;
+        for (int i = 0; i < 3; ++i) first = menuWheelStart(first, 40, 9, 0.25f, remainder);
+        check(first == 0 && remainder == 0.75f, "small wheel deltas accumulate without losing input");
+        first = menuWheelStart(first, 40, 9, 0.25f, remainder);
+        check(first == 1 && remainder == 0, "accumulated wheel input advances a whole row");
+        first = menuWheelStart(first, 40, 9, 100, remainder);
+        check(first == 31 && remainder == 0, "wheel clamps at the bottom without banking overscroll");
+        first = menuWheelStart(first, 40, 9, -1, remainder);
+        check(first == 30, "wheel reverses immediately after reaching the bottom");
+        first = menuWheelStart(first, 40, 9, -100, remainder);
+        check(first == 0 && remainder == 0, "wheel clamps at the top");
+        remainder = 0.75f;
+        check(menuWheelStart(10, 40, 9, -1, remainder) == 9 && remainder == 0,
+            "reversing direction clears stale fractional wheel motion");
+        check(menuWheelStart(0, 0, 9, 3, remainder) == 0 &&
+              menuWheelStart(0, 4, 9, 3, remainder) == 0,
+            "wheel leaves empty and short lists stationary");
+
+        const int down = menuNavigationSelection(4, 40, 9, 1, true, false, 0, 8);
+        check(down == 12 && menuNavigationSelection(down, 40, 9, -1, true, false, 8, 16) == 4,
+            "page navigation moves eight rows in a nine-row viewport and reverses symmetrically");
+        check(menuNavigationSelection(38, 40, 9, 1, true, false, 31, 39) == 39 &&
+              menuNavigationSelection(1, 40, 9, -1, true, false, 0, 8) == 0,
+            "page navigation clamps instead of wrapping");
+        check(menuNavigationSelection(0, 40, 9, 1, false, true, 12, 19) == 12 &&
+              menuNavigationSelection(39, 40, 9, -1, false, true, 12, 19) == 19,
+            "arrows re-enter manually scrolled content at the visible edge");
+        check(menuNavigationSelection(0, 40, 9, -1, true, true, 12, 19) == 19 &&
+              menuNavigationSelection(15, 40, 9, 1, false, true, 12, 19) == 16,
+            "offscreen page selection re-enters while visible arrow selection advances normally");
+        check(menuNavigationSelection(3, 10, 1, 1, true, false, 3, 3) == 4 &&
+              menuNavigationSelection(0, 0, 9, 1, true, false, 0, 0) == 0,
+            "page navigation handles one-row and empty viewports");
+
+        std::vector<MenuRow> rows(5);
+        rows[1].stacked = rows[3].stacked = true;
+        const MenuLayout layout(rows, 30, 50);
+        check(layout.visibleRows(0.5f, 130) == std::pair{1, 2},
+            "re-entry excludes partially clipped rows at both edges with mixed heights");
+        check(layout.visibleRows(1, 130) == std::pair{1, 3},
+            "re-entry includes rows exactly aligned with viewport edges");
+    }
+
     check(fuzzy::score("xyz", "Google Chrome") == 0, "unrelated input does not match");
     check(fuzzy::score("gc", "Google Chrome") > 0, "abbreviations match word boundaries");
     check(fuzzy::score("CHR", "chrome") == fuzzy::score("chr", "chrome"), "matching ignores ASCII case");

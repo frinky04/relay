@@ -407,6 +407,9 @@ void App::reveal(bool takeFocus) {
     replaceInput("");
     m_lastInput.clear();
     m_selected = 0;
+    m_firstVisible = 0;
+    m_wheelRemainder = 0.0f;
+    m_manualScroll = false;
     m_focusInput = takeFocus;
     m_animH = 0.0f;
     m_revealFrame = m_animSnapList = true;
@@ -565,6 +568,9 @@ void App::takeEngineResults() {
         m_hasView = true;
         m_results.clear();
         m_selected = 0;
+        m_firstVisible = 0;
+        m_wheelRemainder = 0.0f;
+        m_manualScroll = false;
         m_animSnapList = true;
         m_spanText = result->view.text;
         m_slots = std::move(result->view.slots);
@@ -616,6 +622,7 @@ void App::takeEngineResults() {
             m_results[pending->row].subtitle = done->error;
             m_results[pending->row].kind = "Error";
             m_selected = (int)pending->row;
+            m_firstVisible = menuViewportStart(m_firstVisible, m_selected, (int)m_results.size(), m_config.maxRows, true);
         }
     }
 }
@@ -814,14 +821,47 @@ void App::drawUi() {
     const bool altActive = !m_peeking && altDown && m_altReleased;
 
     // --- keys. Enter runs, Tab fills; Alt+digit runs, Alt+Shift+digit fills.
+    bool revealSelection = false;
+    const bool keyboardNavigation = !m_peeking && !m_waiting &&
+        (ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_UpArrow) ||
+         ImGui::IsKeyDown(ImGuiKey_PageDown) || ImGui::IsKeyDown(ImGuiKey_PageUp) ||
+         (io.KeyCtrl && (ImGui::IsKeyDown(ImGuiKey_N) || ImGui::IsKeyDown(ImGuiKey_P))));
+    const bool wheelScrolling = !m_peeking && !m_waiting && !keyboardNavigation && n &&
+        io.MouseWheel != 0 && io.MousePos.x >= 0 && io.MousePos.x < W &&
+        io.MousePos.y >= inputH + 1.0f && io.MousePos.y < m_animH - footH;
+    if (wheelScrolling) {
+        UINT lines = 3;
+        SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0);
+        const float rows = lines == WHEEL_PAGESCROLL ? float(std::max(1, MAX_ROWS - 1)) : float(lines);
+        const int first = menuWheelStart(m_firstVisible, n, MAX_ROWS, -io.MouseWheel * rows, m_wheelRemainder);
+        if (first != m_firstVisible) { m_manualScroll = true; m_armedIdx = -1; }
+        m_firstVisible = first;
+    }
     if (!m_peeking) {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { hide(); ImGui::End(); return; }
         if (n && !m_waiting) {
             const bool next = ImGui::IsKeyPressed(ImGuiKey_DownArrow) || (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N));
             const bool prev = ImGui::IsKeyPressed(ImGuiKey_UpArrow) || (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_P));
-            if (next || prev) { m_armedIdx = -1; }
-            if (next) m_selected = (m_selected + 1) % n;
-            if (prev) m_selected = (m_selected + n - 1) % n;
+            const bool pageDown = ImGui::IsKeyPressed(ImGuiKey_PageDown);
+            const bool pageUp = ImGui::IsKeyPressed(ImGuiKey_PageUp);
+            const int direction = (next || pageDown ? 1 : 0) - (prev || pageUp ? 1 : 0);
+            revealSelection = direction != 0;
+            if (revealSelection) {
+                m_armedIdx = -1;
+                m_wheelRemainder = 0.0f;
+                const auto [first, last] = layout.visibleRows(m_animScroll, m_animH - footH - inputH - 1.0f);
+                const bool reenter = m_manualScroll && (m_selected < first || m_selected > last);
+                const bool page = pageDown || pageUp;
+                if (!page && !reenter && ((direction > 0 && m_selected == n - 1) ||
+                                         (direction < 0 && m_selected == 0))) m_animSnapList = true;
+                m_selected = menuNavigationSelection(m_selected, n, MAX_ROWS, direction, page, reenter, first, last);
+                if (page && !reenter)
+                    m_firstVisible = std::clamp(m_firstVisible + direction * std::max(1, MAX_ROWS - 1),
+                        0, std::max(0, n - MAX_ROWS));
+                m_manualScroll = false;
+            }
+            if (revealSelection)
+                m_firstVisible = menuViewportStart(m_firstVisible, m_selected, n, MAX_ROWS, true);
             if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && canFill(m_selected)) { autofill(m_selected); ImGui::End(); return; }
             if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false)) {
                 execute(m_selected, io.KeyShift, true);
@@ -833,7 +873,8 @@ void App::drawUi() {
 
     // Navigation defines the viewport now; animation only positions its rows.
     // Shortcut labels and execution use this same target, never rounded motion.
-    const int firstTarget = std::clamp(m_selected - MAX_ROWS + 1, 0, std::max(0, n - MAX_ROWS));
+    m_firstVisible = menuViewportStart(m_firstVisible, m_selected, n, MAX_ROWS, false);
+    const int firstTarget = m_firstVisible;
     const float listHeight = noMatch ? rowH : layout.position(float(firstTarget + listRows)) - layout.position(float(firstTarget));
     const float targetH = inputH + (listRows ? 1.0f + listHeight + footH : 0);
     const int shortcutCount = std::min({9, MAX_ROWS, n - firstTarget});
@@ -911,7 +952,10 @@ void App::drawUi() {
         }
         const bool hovered = !m_peeking && !m_waiting && io.MousePos.x >= 0 && io.MousePos.x < W &&
             io.MousePos.y >= std::max(y0, listTop) && io.MousePos.y < y1 && io.MousePos.y < footY;
-        if (hovered && mouseMoved && m_selected != idx) { m_selected = idx; m_armedIdx = -1; }
+        if (hovered && mouseMoved && !wheelScrolling && !keyboardNavigation && !revealSelection && m_selected != idx) {
+            m_selected = idx;
+            m_armedIdx = -1;
+        }
         if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { dl->PopClipRect(); execute(idx, false); ImGui::End(); return; }
         const int digit = idx - firstTarget + 1;
         const float digitAlpha = digit >= 1 && digit <= shortcutCount && !danger ? altAlpha : 0.0f;
@@ -949,8 +993,16 @@ void App::drawUi() {
         }
         if (digitAlpha > 0.0f) {
             const char d[2] = { (char)('0' + digit), 0 };
-            const ImVec2 dsz = font->CalcTextSizeA(fs, FLT_MAX, 0, d);
-            dl->AddText(ImVec2(padX + (iconSz - dsz.x) * 0.5f, titleY), theme::rgb(theme::ACCENT_TEXT, digitAlpha), d);
+            const float keyY = titleY + (fs - iconSz) * 0.5f;
+            const ImVec2 keyMin(padX, keyY), keyMax(padX + iconSz, keyY + iconSz);
+            const float rounding = gapS * 0.25f;
+            dl->AddRectFilled(keyMin, keyMax,
+                theme::rgb(theme::BG_INPUT, digitAlpha), rounding);
+            dl->AddRect(keyMin, keyMax,
+                theme::rgb(theme::BORDER, digitAlpha), rounding);
+            const ImVec2 dsz = font->CalcTextSizeA(fsSm, FLT_MAX, 0, d);
+            dl->AddText(font, fsSm, ImVec2(padX + (iconSz - dsz.x) * 0.5f, textY(keyY, iconSz, fsSm)),
+                theme::rgb(theme::TEXT, digitAlpha), d);
         }
 
         // Right edge: the command noun for rows found outside their command.
