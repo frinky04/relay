@@ -163,9 +163,12 @@ int runCommandTests() {
         check(profile != apps.end() && profile->parsing == narrow((root / "user" / "Profile.lnk").wstring()),
             "desktop app retains original shortcut for launch and icon retrieval");
         std::string copied;
+        std::error_code copyPathError;
+        // The shell may normalize path casing or expand a short temp-directory name.
         check(desktop::runApp(narrow((root / "user" / "Profile.lnk").wstring()), desktop::AppAction::CopyPath,
             [&](const std::string& value) { copied = value; return std::string{}; }).empty() &&
-            copied == narrow((root / "fake.exe").wstring()), "shortcut Copy Path uses target with a fake clipboard");
+            !copied.empty() && fs::equivalent(fs::path(widen(copied)), root / "fake.exe", copyPathError) &&
+            !copyPathError, "shortcut Copy Path uses target with a fake clipboard");
         desktop::appendDesktopApps(apps, {root / "user", root / "public"});
         check(apps.size() == 5, "repeated desktop scans do not duplicate apps");
         if (SUCCEEDED(initialized)) CoUninitialize();
