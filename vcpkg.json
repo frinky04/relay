@@ -1,6 +1,6 @@
 {
   "name": "relay",
-  "version-string": "0.2.6",
+  "version-string": "0.2.7",
   "builtin-baseline": "644588ca32576d86325fb3fe3b6020042bee61b8",
   "dependencies": [
     { "name": "imgui", "features": ["dx11-binding", "win32-binding"] },
